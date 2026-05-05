@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                  Int           @id @default(autoincrement())
+  name                String        @db.VarChar(255)
+  level               String        @default("free") @db.VarChar(20)
+  daily_limit         Int           @default(1000)
+  monthly_limit       Int           @default(10000)
+  usage_alert_webhook String?       @db.Text
+  alert_threshold     Float         @default(0.8)
+  created_at          DateTime      @default(now()) @db.DateTime(0)
+  updated_at          DateTime      @updatedAt @db.DateTime(0)
+  api_keys            ApiKey[]
+  devices             Device[]
+  pair_records        PairRecord[]
+  usage_hourly        UsageHourly[]
+
+  @@map("tenants")
+}
+
+model ApiKey {
+  id            String        @id @db.VarChar(64)
+  tenant_id     Int
+  name          String?       @db.VarChar(255)
+  mac_address   String?       @db.VarChar(64)
+  device_limit  Int           @default(1)
+  daily_limit   Int?
+  monthly_limit Int?
+  used_today    Int           @default(0)
+  used_month    Int           @default(0)
+  is_active     Boolean       @default(true)
+  expires_at    DateTime?     @db.DateTime(0)
+  created_at    DateTime      @default(now()) @db.DateTime(0)
+  updated_at    DateTime      @updatedAt @db.DateTime(0)
+  tenant        Tenant        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  devices       Device[]
+  usage_logs    UsageLog[]
+  usage_hourly  UsageHourly[]
+
+  @@index([tenant_id])
+  @@map("api_keys")
+}
+
+model Device {
+  mac_address String     @id @db.VarChar(64)
+  api_key_id  String?    @db.VarChar(64)
+  tenant_id   Int?
+  device_id   String?    @db.VarChar(128)
+  device_cert String?    @db.Text
+  name        String?    @db.VarChar(255)
+  firmware    String?    @db.VarChar(64)
+  last_seen   DateTime?  @db.DateTime(0)
+  is_online   Boolean    @default(false)
+  is_paired   Boolean    @default(false)
+  paired_at   DateTime?  @db.DateTime(0)
+  created_at  DateTime   @default(now()) @db.DateTime(0)
+  updated_at  DateTime   @updatedAt @db.DateTime(0)
+  api_key     ApiKey?    @relation(fields: [api_key_id], references: [id], onDelete: SetNull)
+  tenant      Tenant?    @relation(fields: [tenant_id], references: [id], onDelete: SetNull)
+  usage_logs  UsageLog[]
+
+  @@index([api_key_id])
+  @@index([tenant_id])
+  @@index([device_id])
+  @@map("devices")
+}
+
+model UsageLog {
+  id            BigInt   @id @default(autoincrement())
+  api_key_id    String   @db.VarChar(64)
+  device_mac    String?  @db.VarChar(64)
+  device_id     String?  @db.VarChar(128)
+  model         String?  @db.VarChar(64)
+  input_tokens  Int      @default(0)
+  output_tokens Int      @default(0)
+  latency_ms    Int?
+  success       Boolean  @default(true)
+  error_msg     String?  @db.Text
+  timestamp     DateTime @default(now()) @db.DateTime(0)
+  api_key       ApiKey   @relation(fields: [api_key_id], references: [id], onDelete: Cascade)
+  device        Device?  @relation(fields: [device_mac], references: [mac_address], onDelete: SetNull)
+
+  @@index([timestamp])
+  @@index([api_key_id])
+  @@index([device_id])
+  @@map("usage_logs")
+}
+
+model UsageHourly {
+  id             BigInt   @id @default(autoincrement())
+  api_key_id     String   @db.VarChar(64)
+  tenant_id      Int
+  hour_timestamp DateTime @db.DateTime(0)
+  input_tokens   Int      @default(0)
+  output_tokens  Int      @default(0)
+  call_count     Int      @default(0)
+  success_count  Int      @default(0)
+  fail_count     Int      @default(0)
+  api_key        ApiKey   @relation(fields: [api_key_id], references: [id], onDelete: Cascade)
+  tenant         Tenant   @relation(fields: [tenant_id], references: [id])
+
+  @@unique([api_key_id, hour_timestamp])
+  @@index([tenant_id, hour_timestamp])
+  @@map("usage_hourly")
+}
+
+model PairRecord {
+  id                    Int       @id @default(autoincrement())
+  device_id             String    @db.VarChar(128)
+  mac_address           String?   @db.VarChar(64)
+  openid                String?   @db.VarChar(128)
+  tenant_id             Int?
+  status                String    @default("pending") @db.VarChar(20)
+  pair_token            String?   @db.VarChar(128)
+  pair_token_expires_at DateTime? @db.DateTime(0)
+  created_at            DateTime  @default(now()) @db.DateTime(0)
+  updated_at            DateTime  @updatedAt @db.DateTime(0)
+  tenant                Tenant?   @relation(fields: [tenant_id], references: [id])
+
+  @@index([device_id])
+  @@index([pair_token])
+  @@index([openid])
+  @@map("pair_records")
+}
