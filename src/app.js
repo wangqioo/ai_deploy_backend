@@ -1,10 +1,13 @@
 require('dotenv').config();
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const requestId = require('./middleware/requestId');
 const errorHandler = require('./middleware/errorHandler');
 const routes = require('./routes');
+const eslinkRoutes = require('./routes/esplink');
+const wsManager = require('./ws/deviceWsManager');
 
 const app = express();
 
@@ -19,13 +22,17 @@ app.use(express.urlencoded({ extended: false }));
 app.use(requestId);
 
 app.use('/api/v1', routes);
+app.use('/api', eslinkRoutes);   // EspLink 兼容路由（无 v1 前缀）
 
 app.use(errorHandler);
 
 const PORT = parseInt(process.env.PORT) || 8088;
 
 if (require.main === module) {
-  app.listen(PORT, () => {
+  const server = http.createServer(app);
+  wsManager.setup(server);
+
+  server.listen(PORT, () => {
     console.log(`[Server] 小智AI后台API 启动，端口 ${PORT}`);
     console.log(`[Server] 环境: ${process.env.NODE_ENV || 'development'}`);
 

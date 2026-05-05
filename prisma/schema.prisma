@@ -49,27 +49,45 @@ model ApiKey {
 }
 
 model Device {
-  mac_address String     @id @db.VarChar(64)
-  api_key_id  String?    @db.VarChar(64)
-  tenant_id   Int?
-  device_id   String?    @db.VarChar(128)
-  device_cert String?    @db.Text
-  name        String?    @db.VarChar(255)
-  firmware    String?    @db.VarChar(64)
-  last_seen   DateTime?  @db.DateTime(0)
-  is_online   Boolean    @default(false)
-  is_paired   Boolean    @default(false)
-  paired_at   DateTime?  @db.DateTime(0)
-  created_at  DateTime   @default(now()) @db.DateTime(0)
-  updated_at  DateTime   @updatedAt @db.DateTime(0)
-  api_key     ApiKey?    @relation(fields: [api_key_id], references: [id], onDelete: SetNull)
-  tenant      Tenant?    @relation(fields: [tenant_id], references: [id], onDelete: SetNull)
-  usage_logs  UsageLog[]
+  mac_address    String      @id @db.VarChar(64)
+  api_key_id     String?     @db.VarChar(64)
+  tenant_id      Int?
+  device_id      String?     @db.VarChar(128)
+  device_cert    String?     @db.Text
+  name           String?     @db.VarChar(255)
+  firmware       String?     @db.VarChar(64)
+  last_seen      DateTime?   @db.DateTime(0)
+  is_online      Boolean     @default(false)
+  is_paired      Boolean     @default(false)
+  paired_at      DateTime?   @db.DateTime(0)
+  created_at     DateTime    @default(now()) @db.DateTime(0)
+  updated_at     DateTime    @updatedAt @db.DateTime(0)
+  // EspLink 扩展字段
+  device_key     String?     @db.VarChar(128)
+  board_type     String?     @db.VarChar(64)
+  capabilities   String?     @db.Text
+  wechat_user_id Int?
+  api_key        ApiKey?     @relation(fields: [api_key_id], references: [id], onDelete: SetNull)
+  tenant         Tenant?     @relation(fields: [tenant_id], references: [id], onDelete: SetNull)
+  wechat_user    WechatUser? @relation(fields: [wechat_user_id], references: [id], onDelete: SetNull)
+  usage_logs     UsageLog[]
 
   @@index([api_key_id])
   @@index([tenant_id])
   @@index([device_id])
+  @@index([device_key])
+  @@index([wechat_user_id])
   @@map("devices")
+}
+
+model WechatUser {
+  id         Int      @id @default(autoincrement())
+  openid     String   @unique @db.VarChar(128)
+  nickname   String?  @db.VarChar(255)
+  created_at DateTime @default(now()) @db.DateTime(0)
+  devices    Device[]
+
+  @@map("wechat_users")
 }
 
 model UsageLog {

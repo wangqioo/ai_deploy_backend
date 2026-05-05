@@ -144,6 +144,14 @@ backend/
 
 ---
 
+## 部署
+
+- **服务器**：Spark2（`150.158.146.192`），通过 FRP 隧道访问
+- **后端**：port 8088，PM2 守护
+- **前端**：port 8080，`npm run build` 后由 nginx / serve 托管 `admin-frontend/dist/`
+
+详见 [open.md](./open.md) 的生产部署章节。
+
 ## License
 
 MIT

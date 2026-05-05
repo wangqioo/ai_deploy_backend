@@ -1,6 +1,41 @@
 # 项目启动指南
 
-## 前置要求
+## 本机 Windows 开发环境（当前配置，2026-05-05）
+
+MySQL 和 Redis 通过 **Scoop** 安装在本机，无需 Docker。每次重启电脑后需手动重启服务：
+
+```powershell
+# 刷新 PATH（每次新开终端都需要）
+$env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+
+# 启动 Redis（后台静默运行）
+Start-Process -FilePath "redis-server" -WindowStyle Hidden
+
+# 启动 MySQL（后台静默运行）
+Start-Process -FilePath "mysqld" -ArgumentList "--standalone" -WindowStyle Hidden
+
+# 等待几秒后启动后端
+cd C:\Users\19051\Desktop\ai_deploy\backend
+npm run dev
+
+# 新开终端启动前端
+cd C:\Users\19051\Desktop\ai_deploy\backend\admin-frontend
+npm run dev
+```
+
+当前 `.env` 配置：
+```
+DATABASE_URL="mysql://root:xiaozhi123@localhost:3306/xiaozhi"
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+```
+
+> **注意：** 系统开启了 Clash 代理（port 7897），curl 访问 localhost 会出现 502，属正常现象。浏览器访问不受影响，直接打开 http://localhost:5173 即可。
+
+---
+
+## 前置要求（服务器 / 新机器）
 
 - Node.js 18+
 - MySQL 8.x（复用官方 xiaozhi-esp32-server 的数据库）

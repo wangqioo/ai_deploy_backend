@@ -8,6 +8,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The system extends the official `xiaozhi-esp32-server` database (MySQL + Redis) with custom tables — it does **not** run its own database server.
 
+## 当前环境状态（2026-05-05）✅ 全部完成
+
+> **本地环境已全部配置完成，前后端均已验证可登录。**
+
+| 服务 | 状态 | 说明 |
+|---|---|---|
+| MySQL 9.7.0 | ✅ 运行中 | Scoop 安装，port 3306，root/xiaozhi123 |
+| Redis 8.6.2 | ✅ 运行中 | Scoop 安装，port 6379，无密码 |
+| 数据库表 | ✅ 完成 | `npm run db:push` 已建 6 张扩展表 |
+| 后端 API | ✅ 运行中 | `npm run dev`，port 8088 |
+| 管理前端 | ✅ 运行中 | `npm run dev`，port 5173，已验证可登录 |
+
+**管理后台登录：** http://localhost:5173 — 用户名 `admin` / 密码 `xiaozhi123`
+
+> **注意：** 系统代理（Clash，port 7897）不影响浏览器访问 localhost，但会导致 curl 出现 502，属正常现象。
+
+## 下次开机重启服务
+
+MySQL 和 Redis 不是系统服务，重启电脑后需手动重启：
+
+```powershell
+# 刷新 PATH（每次新开终端都需要）
+$env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
+
+# 启动 Redis（后台）
+Start-Process -FilePath "redis-server" -WindowStyle Hidden
+
+# 启动 MySQL（后台）
+Start-Process -FilePath "mysqld" -ArgumentList "--standalone" -WindowStyle Hidden
+
+# 等几秒，然后启动后端
+cd C:\Users\19051\Desktop\ai_deploy\backend
+npm run dev
+
+# 另开终端启动前端
+cd C:\Users\19051\Desktop\ai_deploy\backend\admin-frontend
+npm run dev
+```
+
+## 当前 .env 配置
+```
+DATABASE_URL="mysql://root:xiaozhi123@localhost:3306/xiaozhi"
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+```
+
+---
+
 ## Critical Constraints
 
 - **Express must stay at `^4.22.1`** — never upgrade to Express 5. Breaking changes burned us in `account-manager`. Already pinned in `package.json`.
