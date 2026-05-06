@@ -4,6 +4,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   DashboardOutlined, TeamOutlined, KeyOutlined, MobileOutlined,
   BarChartOutlined, LogoutOutlined, UserOutlined, RobotOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../../store';
 
@@ -15,6 +16,7 @@ const navItems = [
   { key: '/keys', icon: <KeyOutlined />, label: 'API Key' },
   { key: '/devices', icon: <MobileOutlined />, label: '设备管理' },
   { key: '/usage', icon: <BarChartOutlined />, label: '用量统计' },
+  { key: '/llm-config', icon: <ApiOutlined />, label: '模型配置' },
 ];
 
 export default function AppLayout() {

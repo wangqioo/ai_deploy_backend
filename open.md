@@ -1,6 +1,6 @@
 # 项目启动指南
 
-## 本机 Windows 开发环境（当前配置，2026-05-05）
+## 本机 Windows 开发环境（当前配置，2026-05-06）
 
 MySQL 和 Redis 通过 **Scoop** 安装在本机，无需 Docker。每次重启电脑后需手动重启服务：
 
@@ -32,6 +32,7 @@ REDIS_PASSWORD=
 WX_APPID=                   # 留空 = dev 模式（code 直接当 openid）
 WX_SECRET=
 WS_BASE_URL=ws://localhost:8088
+DEFAULT_AI_MODEL=deepseek-chat
 ```
 
 > **注意：** 系统开启了 Clash 代理（port 7897），curl 访问 localhost 会出现 502，属正常现象。浏览器访问不受影响，直接打开 http://localhost:5173 即可。
@@ -57,7 +58,6 @@ WS_BASE_URL=ws://localhost:8088
 ## 第一步：配置环境变量
 
 ```bash
-# 复制模板
 cp .env.example .env
 ```
 
@@ -79,7 +79,7 @@ ADMIN_PASSWORD=xiaozhi123
 # JWT 密钥（改成随机字符串）
 JWT_SECRET=换一个随机字符串
 
-# 设备签名密钥（改成随机字符串）
+# 设备签名密钥（改成随机字符串，可留空跳过签名校验）
 DEVICE_SIGN_SECRET=换一个随机字符串
 
 # 前端地址（开发时默认 5173）
@@ -89,8 +89,12 @@ CORS_ORIGIN=http://localhost:5173
 # 留空则启用 dev 模式（wx.login 的 code 直接当 openid，无需真实微信环境）
 WX_APPID=your_wx_appid
 WX_SECRET=your_wx_secret
+
 # 返回给固件的 WebSocket 基础地址；生产改为 wss://your-domain.com
 WS_BASE_URL=ws://localhost:8088
+
+# 租户未分配模型时的全局默认
+DEFAULT_AI_MODEL=deepseek-chat
 ```
 
 ---
@@ -100,19 +104,17 @@ WS_BASE_URL=ws://localhost:8088
 在官方 xiaozhi 数据库中创建扩展表：
 
 ```bash
-# 在 backend/ 目录下执行
+# 在 backend/ 目录下执行（执行前确认后端未在运行，否则 Prisma DLL 会被锁定）
 npm run db:push
 ```
 
-> 这会新建 `tenants`、`api_keys`、`devices`、`usage_logs`、`usage_hourly`、`pair_records`、`wechat_users` 七张表，**不影响官方已有的表**。
+> 这会新建 `tenants`、`api_keys`、`devices`、`usage_logs`、`usage_hourly`、`pair_records`、`wechat_users`、`llm_providers` 共 **8 张**扩展表，**不影响官方已有的表**。
 
 ---
 
 ## 第三步：启动后端
 
 ```bash
-# 在 backend/ 目录下
-
 # 开发模式（热重载）
 npm run dev
 
@@ -124,8 +126,8 @@ npm start
 
 看到以下输出说明启动成功：
 ```
+[WS] WebSocket 服务已启动，路径 /ws/device
 [Server] 小氧AI后台API 启动，端口 8088
-[Redis] connected
 [Jobs] 定时任务已启动
 ```
 
@@ -137,8 +139,6 @@ npm start
 
 ```bash
 cd admin-frontend
-
-# 开发模式
 npm run dev
 ```
 
@@ -146,17 +146,92 @@ npm run dev
 
 ---
 
-## 登录后台
+## 第五步：登录后台 & 配置大模型
 
-打开浏览器访问 http://localhost:5173
+打开浏览器访问 http://localhost:5173，用 `.env` 中配置的账号登录（默认 `admin` / `xiaozhi123`）。
 
-默认账号（在 `.env` 中配置）：
-- 用户名：`admin`
-- 密码：`xiaozhi123`
+**首次使用必须配置至少一个大模型厂商的 API Key：**
+
+1. 左侧菜单 → **模型配置**
+2. 找到你有 API Key 的厂商（如 DeepSeek），点击「配置 Key」
+3. 填入 API Key，勾选「启用」，点击确定
+4. 状态变为「已启用」后即可使用
+
+然后在**租户管理**中为租户分配模型（套餐）：
+
+1. 左侧菜单 → **租户管理** → 新建或编辑租户
+2. 「AI 模型（套餐）」选择刚才配置好的模型（如 `deepseek-chat`）
+3. 保存后，该租户下的设备发起 AI 对话时将使用该模型
 
 ---
 
-## 生产部署（Spark2 服务器）
+## 硬件连接测试
+
+### 第一阶段：纯接口测试（无需硬件）
+
+在 PowerShell 中模拟固件行为：
+
+```powershell
+# 1. 健康检查
+Invoke-RestMethod -Uri "http://localhost:8088/api/v1/health/ready"
+
+# 2. 模拟固件注册
+$body = @{ mac = "AA:BB:CC:DD:EE:01"; board_type = "esp32s3"; firmware_version = "1.0.0" } | ConvertTo-Json
+$res = Invoke-RestMethod -Uri "http://localhost:8088/api/ota/check" -Method POST -Body $body -ContentType "application/json"
+$res   # 应返回 token + websocket_url
+
+# 保存 device_key
+$deviceKey = $res.token
+Write-Host "device_key: $deviceKey"
+```
+
+### 第二阶段：WebSocket 测试
+
+```powershell
+# 安装 wscat（仅需一次）
+npm install -g wscat
+
+# 连接 WebSocket（替换 <your_device_key>）
+wscat -c "ws://localhost:8088/ws/device" -H "Authorization: Bearer <your_device_key>"
+```
+
+连上后发送握手：
+```json
+{"type":"hello","capabilities":["tts","asr"],"firmware_version":"1.0.0","session_id":"test001"}
+```
+应收到：`{"type":"hello_ack","is_bound":false,...}`
+
+测试 AI 对话（需已配置厂商 API Key 且租户已分配模型）：
+```json
+{"type":"ai_chat","session_id":"test001","messages":[{"role":"user","content":"你好，介绍一下自己"}]}
+```
+应陆续收到多条 `ai_chunk` 消息，最后收到 `ai_done`。
+
+### 第三阶段：实际硬件连接
+
+固件需要知道后端的实际地址（localhost 对硬件无效）。
+
+**同一局域网开发环境：**
+```powershell
+# 查本机局域网 IP
+ipconfig | Select-String "IPv4"
+```
+将 `.env` 中 `WS_BASE_URL` 改为局域网 IP：
+```
+WS_BASE_URL=ws://192.168.1.100:8088
+```
+重启后端后，固件调用 `/api/ota/check` 拿到的 `websocket_url` 自动变为局域网地址。
+
+**固件侧配置（EspLink 固件 `main.c`）：**
+```c
+#define BOOT_REGISTER_URL "http://192.168.1.100:8088/api/ota/check"
+```
+
+连接成功后，在管理后台**设备管理**页面应看到对应 MAC 地址的设备上线（绿色状态）。
+
+---
+
+## 生产部署（Spark2 服务器，150.158.146.192）
 
 ### 后端
 
@@ -185,6 +260,8 @@ npx serve dist -p 8080
 
 ### nginx 反向代理参考配置
 
+> 注意：WebSocket 连接需要额外的 `Upgrade` 头，否则固件无法建立长连接。
+
 ```nginx
 server {
     listen 8080;
@@ -195,13 +272,30 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # 后端 API 代理
+    # 后端 HTTP API 代理
     location /api/ {
         proxy_pass http://127.0.0.1:8088;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
+
+    # WebSocket 代理（固件长连接，必须单独配置 Upgrade）
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8088;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;   # 保持长连接不超时
+    }
 }
+```
+
+生产环境 `.env` 关键配置：
+```env
+NODE_ENV=production
+WS_BASE_URL=wss://your-domain.com   # 或 ws://150.158.146.192:8088（无域名时）
+CORS_ORIGIN=https://your-admin-domain.com
 ```
 
 ---
@@ -210,17 +304,20 @@ server {
 
 | 命令 | 说明 |
 |---|---|
-| `npm run dev` | 后端开发模式启动 |
-| `npm start` | 后端生产模式启动 |
+| `npm run dev` | 后端开发模式（热重载） |
+| `npm start` | 后端生产模式 |
 | `npm test` | 运行测试 |
-| `npm run db:push` | 同步数据库表结构 |
-| `npm run db:studio` | 打开 Prisma Studio 可视化数据库 |
+| `npm run db:push` | 同步数据库表结构（先停后端） |
+| `npm run db:studio` | Prisma Studio 可视化数据库 |
 | `cd admin-frontend && npm run dev` | 前端开发模式 |
 | `cd admin-frontend && npm run build` | 前端打包 |
 
 ---
 
 ## 常见问题
+
+**Q: `npm run db:push` 报错 "operation not permitted" 或 DLL 锁定**
+必须先停止后端（Ctrl+C 结束 `npm run dev`）再执行，nodemon 会锁住 Prisma 生成的 `.dll.node` 文件。
 
 **Q: `npm run db:push` 报错 "Can't reach database server"**
 检查 `.env` 里 `DATABASE_URL` 的 host/端口/密码是否正确，以及 MySQL 是否在运行。
@@ -229,16 +326,32 @@ server {
 Redis 断线时限流和 Key 缓存会自动降级（放行请求），不影响核心功能。检查 `REDIS_HOST` 配置。
 
 **Q: 前端页面空白 / 接口 404**
-确认后端已在 8088 端口运行。开发模式下 Vite 会自动把 `/api` 请求代理到 8088，无需额外配置。
+确认后端已在 8088 端口运行。开发模式下 Vite 自动把 `/api` 请求代理到 8088，无需额外配置。
 
 **Q: 登录提示"用户名或密码错误"**
 检查 `.env` 中 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 与你输入的是否一致，修改后需重启后端。
 
+**Q: AI 对话返回 "未找到可用的厂商配置"**
+进入后台**模型配置**页面，为对应厂商配置 API Key 并启用。同时确认租户已在**租户管理**中分配了该厂商支持的模型。
+
+**Q: AI 对话返回 "该厂商未启用"**
+进入后台**模型配置**，找到对应厂商，打开右侧开关将其启用。
+
+**Q: 设备发 `ai_chat` 后收不到 `ai_chunk`**
+1. 确认后台模型配置已填写有效 API Key
+2. 确认租户已分配 `ai_model`（或 `DEFAULT_AI_MODEL` 有值）
+3. 检查后端日志，查看调用厂商接口是否返回错误（如余额不足、Key 无效）
+
 **Q: EspLink 小程序调用接口报错**
-确认 `esplink-app/utils/api.js` 里的 `BASE_URL` 已改为 `http://localhost:8088`（开发）或实际服务器地址（生产）。微信开发者工具需在「详情 → 本地设置」中勾选「不校验合法域名」。
+确认小程序里的 `BASE_URL` 已改为实际后端地址（开发：`http://局域网IP:8088`，生产：`https://your-domain.com`）。微信开发者工具需在「详情 → 本地设置」中勾选「不校验合法域名」。
 
 **Q: 固件调用 `/api/ota/check` 失败**
-固件的 `BOOT_REGISTER_URL`（`main.c` 第27行）需改为后端实际地址（开发环境无法直接用 localhost，需用电脑局域网 IP，如 `http://192.168.x.x:8088/api/ota/check`）。
+固件的 `BOOT_REGISTER_URL`（`main.c` 第27行）需改为后端实际地址。开发环境无法用 `localhost`，需用电脑局域网 IP（如 `http://192.168.x.x:8088/api/ota/check`），生产用域名。
 
 **Q: WebSocket 设备无法连接**
-检查 `.env` 中 `WS_BASE_URL` 与固件实际能访问的地址一致。开发时用 `ws://192.168.x.x:8088`（局域网 IP），生产用 `wss://your-domain.com`。
+1. 检查 `.env` 中 `WS_BASE_URL` 是否与固件能访问的地址一致
+2. 生产环境用 nginx 代理时，确认 `/ws/` location 配置了 `Upgrade` 和 `Connection` 头
+3. 开发时用 `ws://局域网IP:8088`，生产用 `wss://your-domain.com`
+
+**Q: curl 访问 localhost 返回 502**
+本机开启了 Clash 代理（port 7897），curl 流量被代理拦截。属正常现象，改用 `Invoke-RestMethod` 或直接用浏览器访问。

@@ -1,5 +1,6 @@
 const { WebSocketServer } = require('ws');
 const prisma = require('../config/database');
+const llmService = require('../services/llmService');
 
 // mac_address → WebSocket 实例
 const connections = new Map();
@@ -66,6 +67,35 @@ function setup(httpServer) {
           });
         } catch {}
         ws.send(JSON.stringify({ type: 'pong' }));
+
+      } else if (msg.type === 'ai_chat') {
+        const { session_id, messages } = msg;
+        if (!Array.isArray(messages) || messages.length === 0) {
+          ws.send(JSON.stringify({ type: 'ai_error', session_id, error: 'messages 不能为空' }));
+          return;
+        }
+        const { model, apiKeyId } = await llmService.getModelForDevice(mac);
+        await llmService.streamChat({
+          messages,
+          model,
+          mac,
+          apiKeyId,
+          onChunk: (delta) => {
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'ai_chunk', session_id, delta }));
+            }
+          },
+          onDone: ({ inputTokens, outputTokens }) => {
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'ai_done', session_id, usage: { input_tokens: inputTokens, output_tokens: outputTokens } }));
+            }
+          },
+          onError: (err) => {
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'ai_error', session_id, error: err.message }));
+            }
+          },
+        });
 
       } else if (msg.type === 'status' || msg.type === 'event') {
         console.log(`[WS] ${mac} ${msg.type}:`, JSON.stringify(msg.payload));

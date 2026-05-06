@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, InputNumber, Select, Space, Popconfirm, message, Tag, Typography } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import { getTenants, createTenant, updateTenant, deleteTenant } from '../../api';
+import { getTenants, createTenant, updateTenant, deleteTenant, getLlmModels } from '../../api';
 
 const LEVEL_COLORS = { free: 'default', pro: 'blue', enterprise: 'gold' };
 
@@ -13,6 +13,7 @@ export default function Tenants() {
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [modelOptions, setModelOptions] = useState([]);
   const [form] = Form.useForm();
 
   const load = useCallback(async () => {
@@ -27,6 +28,19 @@ export default function Tenants() {
   }, [page, search]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    getLlmModels().then((res) => {
+      const grouped = {};
+      for (const m of res.data) {
+        if (!grouped[m.providerName]) grouped[m.providerName] = [];
+        grouped[m.providerName].push({ value: m.id, label: m.name });
+      }
+      setModelOptions(
+        Object.entries(grouped).map(([label, options]) => ({ label, options }))
+      );
+    }).catch(() => {});
+  }, []);
 
   function openCreate() {
     setEditing(null);
@@ -44,6 +58,7 @@ export default function Tenants() {
       monthly_limit: record.monthly_limit,
       usage_alert_webhook: record.usage_alert_webhook || '',
       alert_threshold: Math.round(record.alert_threshold * 100),
+      ai_model: record.ai_model || undefined,
     });
     setModalOpen(true);
   }
@@ -80,6 +95,7 @@ export default function Tenants() {
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '租户名称', dataIndex: 'name', render: (v) => <strong>{v}</strong> },
     { title: '等级', dataIndex: 'level', render: (v) => <Tag color={LEVEL_COLORS[v]}>{v.toUpperCase()}</Tag> },
+    { title: 'AI 模型', dataIndex: 'ai_model', render: (v) => v ? <Tag color="blue">{v}</Tag> : <span style={{ color: '#aaa' }}>默认</span> },
     { title: '日限额', dataIndex: 'daily_limit', render: (v) => v.toLocaleString() },
     { title: '月限额', dataIndex: 'monthly_limit', render: (v) => v.toLocaleString() },
     { title: 'Key数', dataIndex: '_count', render: (v) => v?.api_keys ?? 0 },
@@ -122,6 +138,13 @@ export default function Tenants() {
           </Form.Item>
           <Form.Item name="level" label="等级">
             <Select options={[{ value: 'free', label: 'Free' }, { value: 'pro', label: 'Pro' }, { value: 'enterprise', label: 'Enterprise' }]} />
+          </Form.Item>
+          <Form.Item name="ai_model" label="AI 模型（套餐）" extra="不选则使用系统默认模型">
+            <Select
+              placeholder="选择分配给该租户的模型"
+              allowClear
+              options={modelOptions}
+            />
           </Form.Item>
           <Form.Item name="daily_limit" label="每日调用限额">
             <InputNumber min={1} style={{ width: '100%' }} />

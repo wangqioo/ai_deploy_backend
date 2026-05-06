@@ -45,7 +45,7 @@ router.get('/:id', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { name, level, daily_limit, monthly_limit, usage_alert_webhook, alert_threshold } = req.body || {};
+    const { name, level, daily_limit, monthly_limit, usage_alert_webhook, alert_threshold, ai_model } = req.body || {};
     if (!name) return res.status(400).json(error(40000, '租户名称不能为空'));
 
     const tenant = await prisma.tenant.create({
@@ -56,6 +56,7 @@ router.post('/', async (req, res, next) => {
         monthly_limit: monthly_limit || 10000,
         usage_alert_webhook: usage_alert_webhook || null,
         alert_threshold: alert_threshold ?? 0.8,
+        ai_model: ai_model || null,
       },
     });
     res.status(201).json(success(tenant));
@@ -66,7 +67,7 @@ router.post('/', async (req, res, next) => {
 
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { name, level, daily_limit, monthly_limit, usage_alert_webhook, alert_threshold } = req.body || {};
+    const { name, level, daily_limit, monthly_limit, usage_alert_webhook, alert_threshold, ai_model } = req.body || {};
     const data = {};
     if (name !== undefined) data.name = name;
     if (level !== undefined) data.level = level;
@@ -74,6 +75,7 @@ router.patch('/:id', async (req, res, next) => {
     if (monthly_limit !== undefined) data.monthly_limit = monthly_limit;
     if (usage_alert_webhook !== undefined) data.usage_alert_webhook = usage_alert_webhook;
     if (alert_threshold !== undefined) data.alert_threshold = alert_threshold;
+    if (ai_model !== undefined) data.ai_model = ai_model || null;
 
     const tenant = await prisma.tenant.update({ where: { id: parseInt(req.params.id) }, data });
     res.json(success(tenant));

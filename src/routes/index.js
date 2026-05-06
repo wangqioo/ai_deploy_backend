@@ -9,5 +9,6 @@ router.use('/devices', require('./devices'));
 router.use('/usage', require('./usage'));
 router.use('/pair', require('./pair'));
 router.use('/operation', require('./operation'));
+router.use('/llm', require('./llm'));
 
 module.exports = router;

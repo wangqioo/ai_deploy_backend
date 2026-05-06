@@ -10,7 +10,9 @@ The system extends the official `xiaozhi-esp32-server` database (MySQL + Redis) 
 
 **EspLink 集成（2026-05-05 完成）**：已与团队的 EspLink BLE 配网系统打通。ESP32 固件通过 `/api/ota/check` 注册并获取 WebSocket 地址；微信小程序通过 `/api/auth/wechat`、`/api/device/*` 完成登录、设备发现和绑定；后端提供 `/ws/device` WebSocket 长连接供固件使用。EspLink 路由挂载在 `/api/`（无 v1 前缀），与管理路由 `/api/v1/` 并存。
 
-## 当前环境状态（2026-05-05）✅ 全部完成
+**LLM 代理（2026-05-06 完成）**：后端现在是多厂商大模型代理。管理员在 `llm_providers` 表中配置各厂商 API Key，每个租户分配一个 `ai_model`（即套餐）。设备通过 WebSocket 发送 `ai_chat` 消息，后端流式调用对应厂商 API，逐 chunk 推回设备。支持 DeepSeek、GLM、MiniMax、Moonshot、通义千问、火山引擎、OpenAI，均通过 `openai` npm 包 + 自定义 `baseURL` 驱动。
+
+## 当前环境状态（2026-05-06）✅ 全部完成
 
 > **本地环境已全部配置完成，前后端均已验证可登录。**
 
@@ -18,7 +20,7 @@ The system extends the official `xiaozhi-esp32-server` database (MySQL + Redis) 
 |---|---|---|
 | MySQL 9.7.0 | ✅ 运行中 | Scoop 安装，port 3306，root/xiaozhi123 |
 | Redis 8.6.2 | ✅ 运行中 | Scoop 安装，port 6379，无密码 |
-| 数据库表 | ✅ 完成 | `npm run db:push` 已建 6 张扩展表 |
+| 数据库表 | ✅ 完成 | `npm run db:push` 已建 8 张扩展表（含 llm_providers） |
 | 后端 API | ✅ 运行中 | `npm run dev`，port 8088 |
 | 管理前端 | ✅ 运行中 | `npm run dev`，port 5173，已验证可登录 |
 
@@ -55,6 +57,7 @@ DATABASE_URL="mysql://root:xiaozhi123@localhost:3306/xiaozhi"
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
+DEFAULT_AI_MODEL=deepseek-chat
 ```
 
 ---
@@ -67,6 +70,9 @@ REDIS_PASSWORD=
 - **Prisma `groupBy` does not support relation filters in `where`** — always resolve related IDs first (e.g. fetch `api_key_id` list for a tenant), then filter with `{ api_key_id: { in: [...] } }`. Affected functions: `getStatsByModel`, `getDailyStats` fallback.
 - **WebSocket requires `http.createServer`** — `app.listen()` was replaced with `http.createServer(app)` + `wsManager.setup(server)`. Do not revert to `app.listen()` or WebSocket will break.
 - **Device MAC in URLs** — EspLink routes encode MAC as `AA-BB-CC-DD-EE-FF` (dashes, not colons) to avoid Express route-param conflicts. Always `replace(/-/g, ':')` when querying the DB.
+- **LLM provider registry is static** — `src/config/llmProviders.js` is the source of truth for supported providers and models. Adding a new vendor requires editing this file; the DB only stores the API key, not the baseURL.
+- **`usage_logs.api_key_id` is nullable** — AI chat via WebSocket doesn't go through keyValidator, so devices may have no api_key_id. Usage logging is skipped when api_key_id is null.
+- **Stopping backend required before `db:push`** — Prisma regenerates the DLL client which is locked by the running process. Always stop `npm run dev` before running `npx prisma db push`.
 
 ## Development Commands
 
@@ -75,7 +81,7 @@ REDIS_PASSWORD=
 npm run dev          # nodemon, port 8088
 npm start            # node, production
 npm test             # jest --runInBand
-npm run db:push      # sync schema to DB (no migration history)
+npm run db:push      # sync schema to DB (no migration history) — stop backend first
 npm run db:migrate   # prisma migrate dev
 npm run db:studio    # Prisma Studio GUI
 
@@ -93,7 +99,8 @@ backend/
 │   ├── app.js                   # Express entry; http.createServer + WS setup; mounts /api/v1 and /api routers
 │   ├── config/
 │   │   ├── database.js          # Singleton PrismaClient (global.__prisma in dev)
-│   │   └── redis.js             # ioredis client, lazyConnect, graceful error handling
+│   │   ├── redis.js             # ioredis client, lazyConnect, graceful error handling
+│   │   └── llmProviders.js      # Static registry: provider → baseURL + model list; MODEL_TO_PROVIDER index
 │   ├── middleware/
 │   │   ├── requestId.js         # Injects req.requestId; overrides res.json with spread to add requestId
 │   │   ├── adminAuth.js         # JWT Bearer token verification for management routes
@@ -106,12 +113,13 @@ backend/
 │   │   ├── index.js             # Mounts all sub-routers under /api/v1
 │   │   ├── auth.js              # POST /auth/login, GET /auth/me (no adminAuth)
 │   │   ├── health.js            # GET /health, GET /health/ready (DB + Redis ping)
-│   │   ├── tenants.js           # CRUD; all behind adminAuth
+│   │   ├── tenants.js           # CRUD; all behind adminAuth; includes ai_model field
 │   │   ├── keys.js              # CRUD + reset-usage; all behind adminAuth
 │   │   ├── devices.js           # POST /register (public); rest behind adminAuth
 │   │   ├── usage.js             # summary/daily/by-key/by-model/logs; behind adminAuth
 │   │   ├── pair.js              # verify/confirm/status — public, no auth required
 │   │   ├── operation.js         # overview/top-tenants/active-devices; behind adminAuth
+│   │   ├── llm.js               # GET /models; GET/PUT /providers/:p; PATCH /providers/:p/toggle
 │   │   └── esplink.js           # EspLink 兼容路由（/api/ 前缀）：ota/check, auth/wechat, device/*
 │   ├── services/
 │   │   ├── keyService.js        # Key CRUD; invalidates Redis cache on write
@@ -119,9 +127,10 @@ backend/
 │   │   ├── usageService.js      # Stats queries; groupBy uses direct field filters only
 │   │   ├── alertService.js      # Webhook POST when tenant usage ≥ alert_threshold
 │   │   ├── operationService.js  # Overview + top-tenant + active-device aggregations
-│   │   └── wechatService.js     # WeChat code2session, bootRegister, lookupDevice, bindDevice
+│   │   ├── wechatService.js     # WeChat code2session, bootRegister, lookupDevice, bindDevice
+│   │   └── llmService.js        # streamChat() — OpenAI-SDK proxy with streaming; getModelForDevice()
 │   ├── ws/
-│   │   └── deviceWsManager.js   # WebSocket server on /ws/device; auth via device_key; ping/command
+│   │   └── deviceWsManager.js   # WebSocket server on /ws/device; handles hello/ping/ai_chat/command
 │   ├── jobs/
 │   │   ├── heartbeatChecker.js  # Cron every minute; marks is_online=false after 2 min silence
 │   │   ├── usageAggregator.js   # Cron 5 * * * *; rolls usage_logs → usage_hourly
@@ -130,7 +139,7 @@ backend/
 │       ├── uuid.js              # generateApiKey / generatePairToken / generateRequestId
 │       ├── response.js          # success(data) / paginated(list,page,pageSize,total) / error(code,msg)
 │       └── cert.js              # verifyDeviceSign — timingSafeEqual with length guard
-├── prisma/schema.prisma         # 8 models: Tenant ApiKey Device UsageLog UsageHourly PairRecord WechatUser
+├── prisma/schema.prisma         # 9 models: Tenant ApiKey Device UsageLog UsageHourly PairRecord WechatUser LlmProvider
 ├── admin-frontend/
 │   ├── vite.config.js           # Proxies /api → http://localhost:8088
 │   └── src/
@@ -140,10 +149,11 @@ backend/
 │       └── pages/
 │           ├── Login/           # POST /auth/login → stores token
 │           ├── Dashboard/       # Summary cards + 7-day line chart + model pie + top-5 tenants
-│           ├── Tenants/         # CRUD table with modal form
+│           ├── Tenants/         # CRUD table; modal includes ai_model selector (grouped by provider)
 │           ├── ApiKeys/         # CRUD table; toggle is_active via Switch; copy key button
 │           ├── Devices/         # Table with online badge; 30s auto-refresh toggle; assign-key modal
-│           └── Usage/           # Stats cards + line chart + pie + paginated log table + CSV export
+│           ├── Usage/           # Stats cards + line chart + pie + paginated log table + CSV export
+│           └── LlmConfig/       # Provider table; configure API Key modal; enable/disable toggle
 └── .env.example
 ```
 
@@ -182,18 +192,51 @@ EspLink 路由挂载在 `/api/`（无 v1 前缀），与管理路由并存。
 | GET | `/api/device/lookup?mac_suffix=AABBCC` | wechatAuth | 小程序 | 按 MAC 后三字节查找刚上线设备 |
 | POST | `/api/device/bind` | wechatAuth | 小程序 | 绑定设备到当前微信用户 |
 | POST | `/api/device/:mac/command` | wechatAuth | 小程序 | 通过 WebSocket 下发指令（`:mac` 用 `-` 代替 `:`） |
-| WS | `/ws/device` | device_key | 固件 | 设备长连接，支持 hello/ping/command/ota_push |
+| WS | `/ws/device` | device_key | 固件 | 设备长连接，支持 hello/ping/ai_chat/command |
 
-**WebSocket 消息格式：**
+## LLM 代理接口
+
+管理接口挂载在 `/api/v1/llm/`，均需 adminAuth。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/llm/models` | 所有支持模型列表（含厂商分组） |
+| GET | `/api/v1/llm/providers` | 所有厂商配置状态（API Key 脱敏） |
+| PUT | `/api/v1/llm/providers/:provider` | 新增或覆盖厂商 API Key |
+| PATCH | `/api/v1/llm/providers/:provider/toggle` | 启用 / 禁用厂商 |
+
+## WebSocket 消息格式（完整）
+
 ```
 固件 → 服务器: { type: "hello", capabilities, firmware_version, session_id }
 服务器 → 固件: { type: "hello_ack", is_bound: bool }
+
 固件 → 服务器: { type: "ping" }
 服务器 → 固件: { type: "pong" }
+
+固件 → 服务器: { type: "ai_chat", session_id: "abc", messages: [{role, content}, ...] }
+服务器 → 固件: { type: "ai_chunk", session_id: "abc", delta: "你好" }   ← 流式，多条
+服务器 → 固件: { type: "ai_done",  session_id: "abc", usage: { input_tokens, output_tokens } }
+服务器 → 固件: { type: "ai_error", session_id: "abc", error: "..." }
+
 服务器 → 固件: { type: "command", payload: {...} }
 ```
 
 **device_key 生命周期**：首次 `POST /api/ota/check` 时生成 64 位随机 hex，存入 `devices.device_key`，后续同一 MAC 复用同一 key。固件将其存入 NVS，WebSocket 连接时放入 `Authorization: Bearer` 头。
+
+## LLM 支持厂商
+
+| 厂商 | provider key | baseURL | 示例模型 |
+|---|---|---|---|
+| DeepSeek | `deepseek` | api.deepseek.com | deepseek-chat, deepseek-reasoner |
+| 智谱 GLM | `glm` | open.bigmodel.cn/api/paas/v4/ | glm-4-flash, glm-4-plus |
+| MiniMax | `minimax` | api.minimax.chat/v1 | MiniMax-Text-01 |
+| Moonshot/Kimi | `moonshot` | api.moonshot.cn/v1 | moonshot-v1-8k |
+| 通义千问 | `qwen` | dashscope.aliyuncs.com/compatible-mode/v1 | qwen-turbo, qwen-max |
+| 火山引擎 | `volcano` | ark.cn-beijing.volces.com/api/v3 | doubao-pro-4k |
+| OpenAI | `openai` | api.openai.com/v1 | gpt-4o-mini, gpt-4o |
+
+所有厂商均通过 `openai` npm 包驱动（OpenAI 兼容接口），无需额外 SDK。新增厂商只需在 `src/config/llmProviders.js` 中添加条目。
 
 ## Key Architectural Decisions
 
@@ -210,18 +253,24 @@ EspLink 路由挂载在 `/api/`（无 v1 前缀），与管理路由并存。
 | `requestId` injection | Middleware overrides `res.json` with spread | Routes stay clean; no manual threading of requestId |
 | WeChat JWT | Same `JWT_SECRET`, `type: 'wechat'` claim | Reuse secret; `wechatAuth` middleware rejects `type: 'admin'` tokens |
 | MAC in URL | Dashes `AA-BB-CC-DD-EE-FF` | Colons break Express `:param` parsing |
+| LLM driver | `openai` npm + custom `baseURL` | All 7 supported vendors are OpenAI-compatible; one package covers all |
+| LLM provider config | DB table `llm_providers`, static registry in code | Keys in DB (sensitive); URL/model list in code (versioned) |
+| LLM model per tenant | `tenants.ai_model` field | Model selection = package differentiation; no extra tables needed |
+| LLM streaming | WebSocket `ai_chunk` messages | Device already has persistent WS; avoids second HTTP connection |
+| `usage_logs.api_key_id` nullable | Changed to `String?` | AI chat bypasses keyValidator; devices may have no api_key assigned |
 
 ## Database Tables
 
 | Table | Key detail |
 |---|---|
-| `tenants` | PK: `id` (int). Has `usage_alert_webhook` + `alert_threshold` |
+| `tenants` | PK: `id` (int). Has `usage_alert_webhook` + `alert_threshold` + `ai_model` (which LLM model this tenant uses) |
 | `api_keys` | PK: `id` (varchar 64, `sk-` prefix UUID). FK → tenants |
 | `devices` | PK: `mac_address`. `device_id` = QR-code identifier. `device_key` = 64-hex WebSocket auth token. `board_type`/`capabilities` = EspLink 设备元数据. `wechat_user_id` = FK → wechat_users |
-| `usage_logs` | Kept 7 days only. Relation filters work in `findMany`/`count` but NOT in `groupBy` |
+| `usage_logs` | Kept 7 days only. `api_key_id` is nullable (AI chat via WS has no key). Relation filters work in `findMany`/`count` but NOT in `groupBy` |
 | `usage_hourly` | Unique on `(api_key_id, hour_timestamp)`. Primary stats source |
 | `pair_records` | Tracks QR-code pairing lifecycle: `pending → paired / failed` |
 | `wechat_users` | PK: `id` (int). `openid` UNIQUE. 微信用户，通过 EspLink 小程序登录创建 |
+| `llm_providers` | PK: `id` (int). `provider` UNIQUE (e.g. "deepseek"). Stores API Key per vendor. Admin-managed. |
 
 ## Background Jobs
 
@@ -245,6 +294,7 @@ EspLink 路由挂载在 `/api/`（无 v1 前缀），与管理路由并存。
 | `WX_APPID` | No | 微信小程序 AppID；留空则启用 dev 模式（code 直接当 openid） |
 | `WX_SECRET` | No | 微信小程序 AppSecret；生产必填 |
 | `WS_BASE_URL` | No | 返回给固件的 WebSocket 基础地址，默认 `ws://localhost:8088`；生产改为 `wss://your-domain` |
+| `DEFAULT_AI_MODEL` | No | 租户未分配模型时的全局默认，默认 `deepseek-chat` |
 
 ## Deployment Target
 

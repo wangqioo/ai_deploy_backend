@@ -15,6 +15,7 @@ model Tenant {
   monthly_limit       Int           @default(10000)
   usage_alert_webhook String?       @db.Text
   alert_threshold     Float         @default(0.8)
+  ai_model            String?       @db.VarChar(64)
   created_at          DateTime      @default(now()) @db.DateTime(0)
   updated_at          DateTime      @updatedAt @db.DateTime(0)
   api_keys            ApiKey[]
@@ -92,7 +93,7 @@ model WechatUser {
 
 model UsageLog {
   id            BigInt   @id @default(autoincrement())
-  api_key_id    String   @db.VarChar(64)
+  api_key_id    String?  @db.VarChar(64)
   device_mac    String?  @db.VarChar(64)
   device_id     String?  @db.VarChar(128)
   model         String?  @db.VarChar(64)
@@ -102,13 +103,24 @@ model UsageLog {
   success       Boolean  @default(true)
   error_msg     String?  @db.Text
   timestamp     DateTime @default(now()) @db.DateTime(0)
-  api_key       ApiKey   @relation(fields: [api_key_id], references: [id], onDelete: Cascade)
+  api_key       ApiKey?  @relation(fields: [api_key_id], references: [id], onDelete: SetNull)
   device        Device?  @relation(fields: [device_mac], references: [mac_address], onDelete: SetNull)
 
   @@index([timestamp])
   @@index([api_key_id])
   @@index([device_id])
   @@map("usage_logs")
+}
+
+model LlmProvider {
+  id         Int      @id @default(autoincrement())
+  provider   String   @unique @db.VarChar(64)
+  api_key    String   @db.VarChar(512)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.DateTime(0)
+  updated_at DateTime @updatedAt @db.DateTime(0)
+
+  @@map("llm_providers")
 }
 
 model UsageHourly {

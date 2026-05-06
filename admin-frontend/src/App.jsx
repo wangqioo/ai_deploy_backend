@@ -8,6 +8,7 @@ import Tenants from './pages/Tenants';
 import ApiKeys from './pages/ApiKeys';
 import Devices from './pages/Devices';
 import Usage from './pages/Usage';
+import LlmConfig from './pages/LlmConfig';
 
 function RequireAuth({ children }) {
   const token = useAuthStore((s) => s.token);
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="keys" element={<ApiKeys />} />
           <Route path="devices" element={<Devices />} />
           <Route path="usage" element={<Usage />} />
+          <Route path="llm-config" element={<LlmConfig />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -56,4 +56,10 @@ export const getUsageLogs = (params) => api.get('/usage/logs', { params });
 export const getOperationOverview = () => api.get('/operation/overview');
 export const getTopTenants = (params) => api.get('/operation/top-tenants', { params });
 
+// LLM 模型配置
+export const getLlmProviders = () => api.get('/llm/providers');
+export const getLlmModels = () => api.get('/llm/models');
+export const upsertLlmProvider = (provider, data) => api.put(`/llm/providers/${provider}`, data);
+export const toggleLlmProvider = (provider) => api.patch(`/llm/providers/${provider}/toggle`);
+
 export default api;
