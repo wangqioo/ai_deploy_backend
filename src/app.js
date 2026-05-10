@@ -3,6 +3,7 @@ const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
 const requestId = require('./middleware/requestId');
 const errorHandler = require('./middleware/errorHandler');
 const routes = require('./routes');
@@ -23,6 +24,16 @@ app.use(requestId);
 
 app.use('/api/v1', routes);
 app.use('/api', eslinkRoutes);   // EspLink 兼容路由（无 v1 前缀）
+
+// Serve frontend static files (built by Vite)
+const frontendDist = path.join(__dirname, '../admin-frontend/dist');
+app.use(express.static(frontendDist));
+
+// SPA fallback: unmatched routes serve index.html
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(frontendDist, 'index.html'));
+});
 
 app.use(errorHandler);
 
