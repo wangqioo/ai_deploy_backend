@@ -18,125 +18,153 @@ The system extends the official `xiaozhi-esp32-server` database (MySQL + Redis) 
 
 **嘉立创 ESP32-S3 显示屏移植（2026-05-06）**：EspLink 固件新增 `main/app_display.c`，为嘉立创开发板（lichuang-dev）适配 ST7789 LCD 驱动。核心实现：通过 I2C（SDA=GPIO1，SCL=GPIO2）初始化 PCA9557 IO 扩展芯片（addr=0x19）释放 LCD 硬件复位，再通过 SPI3（MOSI=GPIO40，SCLK=GPIO41，DC=GPIO39）初始化 ST7789 面板，GPIO42 低电平开启背光。`app_display_fill(color)` 根据设备状态更新屏幕颜色（`set_state()` 中调用）：白=启动，蓝=BLE 配网，黄=WiFi 连接中，橙=注册中，绿=在线，红=错误。**颜色字节序修复**：ESP32 小端序 + SPI DMA 按内存顺序发送字节，ST7789 期望大端序，导致颜色显示错误（如蓝变粉）。`esp_lcd_panel_io_spi_config_t` 在本 IDF 版本无 `swap_color_bytes` 字段，改用 `__builtin_bswap16(display_color ^ 0xFFFF)` 手动修正，已修复。出厂重置方法：长按 BOOT 键（GPIO0）5 秒；若来不及长按，用 `python -m esptool --port COM3 --chip esp32s3 erase_region 0x9000 0x6000` 只擦 NVS（分区表：nvs@0x9000 size=0x6000），之后需**物理拔插 USB** 让设备重启（esptool RTS 复位不可靠）。设备 MAC=E4:B0:63:92:7D:70，BLE 广播名=Device-927D70。
 
-**固件 WiFi 断连状态机修复（2026-05-06）**：`on_wifi_disconnected` 原来只处理两种情况（配网后等待 WiFi / 在线时断开），当设备用已存凭据连 WiFi 失败（`STATE_WIFI_CONNECTING`）时什么都不做，导致设备**永远卡在黄色**。修复：重试 5 次失败后（`app_wifi.c` 的 `MAX_RETRY=5`），在 `else if (s_state == STATE_WIFI_CONNECTING)` 分支调用 `app_nvs_factory_reset()` 清除错误凭据，再调 `app_blufi_start()` 重新进入蓝色 BLE 配网模式。**重要**：配网时若小程序还开着且记住了旧密码，会在设备变蓝后立即自动重新配网写入错误凭据——需先关闭小程序再做 NVS 擦除。
+**固件 WiFi 断连状态机修复（2026-05-06，已移植到 Mac 版）**：`on_wifi_disconnected` 原来只处理两种情况（配网后等待 WiFi / 在线时断开），当设备用已存凭据连 WiFi 失败（`STATE_WIFI_CONNECTING`）时什么都不做，导致设备**永远卡住**。修复：5 次重试失败后，在 `else if (s_state == STATE_WIFI_CONNECTING)` 分支调用 `app_nvs_factory_reset()` 清除错误凭据，再调 `app_blufi_start()` 重新进入 BLE 配网模式。**重要**：配网时若小程序还开着且记住了旧密码，会在设备重新进入 BLE 后立即自动重新配网写入错误凭据——需先关闭小程序再擦 NVS。
 
-## 硬件联调测试流程（Mac Mini + ESP32）
+**assign-key 接口修复（2026-05-10）**：`POST /api/v1/devices/:mac/assign-key` 原来只写 `api_key_id`，但 `getModelForDevice()` 通过 `tenant`（即 `tenant_id`）关联拿模型，导致从管理后台分配 Key 后设备 AI 对话仍报「未找到厂商配置」。修复：分配前先查 API Key 的 `tenant_id`，一并写入设备。
 
-> **背景**：微信开发者工具的 BLE 蓝牙调试仅支持 macOS，Windows 版会报"蓝牙调试暂不支持此平台"。因此小程序调试需在 **Mac Mini** 上进行；后端仍运行在 Windows 机器（`172.20.10.5:8088`），两台机器同处同一 WiFi。
+**Mac 本地开发环境（2026-05-10 完成）**：后端已在 Mac（`172.20.10.3`）本地跑通。MySQL 9.6 + Redis 8.6 通过 Homebrew 安装；ESP32 固件通过 Mac 上的 ESP-IDF v5.4.1 编译烧录；小程序真机调试时 `BASE_URL` 须为 Mac 局域网 IP（`http://172.20.10.3:8088`），不能用 `localhost`。`curl` 访问 localhost 会被 Clash 代理拦截报 502，属正常现象，加 `--noproxy localhost` 绕过。
+
+**iOS 小程序 WiFi 扫描限制（2026-05-10）**：`wx.startWifi()` 在 iOS 上强制跳微信权限管理页，无法绕过。配网页面已改为纯手动输入，不做 WiFi 扫描。BLE 连接（`createBLEConnection`）在模拟器里不支持，必须用微信开发者工具的**真机调试**扫码在真实手机上测试。
+
+## 硬件联调测试流程（Mac + ESP32）
+
+> **当前配置**：后端、固件编译、小程序调试全部在 **Mac**（`172.20.10.3`）上进行。BLE 调试需用微信开发者工具**真机调试**功能扫码到真实手机，模拟器不支持 `createBLEConnection`。
 
 ### 前置条件
 
 | 项目 | 说明 |
 |---|---|
-| 后端 IP | `172.20.10.5:8088`（Windows 机器的 WiFi IP） |
-| 小程序项目 | `esplink-app/`，`utils/api.js` 第 1 行 `BASE_URL = 'http://172.20.10.5:8088'` |
-| 固件烧录 | 已烧录，`BOOT_REGISTER_URL = http://172.20.10.5:8088/api/ota/check` |
+| 后端 IP | `172.20.10.3:8088`（Mac 的局域网 IP） |
+| 小程序项目 | `/Users/hushaohong/vibe-coding/EspLink/esplink-app/`，`utils/api.js` 第 1 行 `BASE_URL = 'http://172.20.10.3:8088'` |
+| 固件烧录 | `BOOT_REGISTER_URL = http://172.20.10.3:8088/api/ota/check`，串口 `/dev/cu.usbmodem212301` |
 | 设备 MAC | `E4:B0:63:92:7D:70`，BLE 广播名 `Device-927D70` |
 
-### 第一步：启动 Windows 后端
+### 第一步：启动 Mac 后端
 
-在 Windows 机器上打开 PowerShell：
+```bash
+# 确认 MySQL 和 Redis 在运行（开机后需手动启动）
+export PATH="/opt/homebrew/bin:$PATH"
+brew services start mysql
+brew services start redis
 
-```powershell
-$env:PATH = "$env:USERPROFILE\scoop\shims;$env:PATH"
-Start-Process -FilePath "redis-server" -WindowStyle Hidden
-Start-Process -FilePath "mysqld" -ArgumentList "--standalone" -WindowStyle Hidden
-# 等几秒
-cd C:\Users\19051\Desktop\ai_deploy\backend
+# 启动后端
+cd /Users/hushaohong/vibe-coding/ai_deploy_backend
 npm run dev
+
+# 另开终端启动前端
+cd admin-frontend && npm run dev
 ```
 
-看到 `[Server] 小氧AI后台API 启动，端口 8088` 即为成功。
+看到 `[Server] 小氧AI后台API 启动，端口 8088` 即为成功。`curl` 测试用 `--noproxy localhost` 绕过 Clash。
 
-### 第二步：Mac Mini 配置微信开发者工具
+### 第二步：配置微信开发者工具
 
-1. 安装 Mac 版微信开发者工具（稳定版）
-2. 导入项目：目录选 `esplink-app/`，AppID = `wxa4fae319f609fdce`
-3. 点工具栏右侧 **「···」→「项目设置」→「本地设置」**，勾选 **「不校验合法域名...」**
-4. **工具 → 设置 → 代理 → 不使用代理**（防止系统代理导致 502）
+1. 导入项目：`/Users/hushaohong/vibe-coding/EspLink/esplink-app/`，AppID = `wxa4fae319f609fdce`
+2. **「···」→「项目设置」→「本地设置」** 勾选「不校验合法域名」
+3. **设置 → 代理 → 不使用代理**
+4. BLE 真机测试：点顶部**「真机调试」**，用真实手机微信扫码（模拟器不支持 BLE 连接）
 
-### 第三步：验证小程序登录
-
-重新编译后，Console 应看到没有报错，且 Network 有一条 `POST /api/auth/wechat` 返回 200。
-
-后端 `.env` 中 `WX_APPID` 为空，自动走 **dev 模式**（微信 code 直接当 openid 使用），无需真实微信账号体系即可完成登录。
-
-### 第四步：硬件配网测试（核心流程）
-
-**设备 LED 颜色含义**（嘉立创 ESP32-S3 LCD 屏）：
-
-| 颜色 | 状态 |
-|---|---|
-| 白色 | 刚上电启动 |
-| **蓝色** | BLE 配网模式（等待小程序配网） |
-| 黄色 | 正在连接 WiFi |
-| **橙色** | WiFi 已连，正在向后端注册 |
-| **绿色** | 在线，WebSocket 已建立 ✅ |
-| 红色 | 错误 |
+### 第三步：硬件配网测试
 
 **步骤**：
 
-1. 给 ESP32 上电，等待屏幕变蓝（BLE 配网模式）
-2. Mac Mini 微信开发者工具模拟器中，点 **「+」添加设备**
-3. 小程序扫描 BLE 设备，找到 `Device-927D70`，点击连接
-4. 输入当前 WiFi 的 SSID 和密码，发送配网
-5. 观察设备屏幕：蓝 → 黄（连 WiFi）→ 橙（注册中）→ **绿（成功）**
+1. ESP32 上电（屏幕黑，无显示驱动；串口日志显示 BLE 广播已启动）
+2. 手机微信扫真机调试二维码打开小程序
+3. 点「+」→ 找到 `Device-927D70` → 连接
+4. 手动输入 WiFi 名称和密码（iOS 不支持 WiFi 扫描，只能手动输入）
+5. 点「开始配网」
 6. 小程序轮询 `GET /api/device/lookup?mac_suffix=927D70`，发现设备后弹出绑定确认
-7. 确认绑定 → 调用 `POST /api/device/bind`
-
-### 第五步：验证后台是否看到设备
-
-打开管理后台 `http://172.20.10.5:5173`（从 Mac 访问），登录 `admin / xiaozhi123`，进入「设备管理」，应能看到 MAC `E4:B0:63:92:7D:70` 的设备在线。
+7. 确认绑定 → 管理后台 http://localhost:5173 → 设备管理 → 能看到设备在线 ✅
 
 ### 常见问题
 
 | 现象 | 原因 | 解决 |
 |---|---|---|
-| 小程序登录 502 | 系统代理（Clash）拦截 | 开发者工具设置 → 代理 → 不使用代理 |
-| 小程序登录 ERR_CONNECTION_REFUSED | 后端未启动 | Windows 上执行 `npm run dev` |
-| 设备永远卡黄色 | WiFi 密码错误，重试 5 次后自动重置回蓝色（固件已修复） | 等待设备自动变回蓝色，重新配网 |
-| 设备变蓝但小程序立刻又配错 | 小程序记住了旧密码自动重配 | 关闭小程序再擦 NVS，或直接修改密码后重配 |
-| 配网成功但后台看不到设备 | `WS_BASE_URL` 配置错误，固件拿到了错误的 ws 地址 | 检查 `.env` 中 `WS_BASE_URL=ws://172.20.10.5:8088` |
-| NVS 出厂重置 | 需要擦除设备存储的旧 WiFi 凭证 | Windows：`python -m esptool --port COM3 --chip esp32s3 erase_region 0x9000 0x6000`，之后**物理拔插 USB** |
+| 小程序登录报 ERR_CONNECTION_REFUSED | `BASE_URL` 用了 `localhost`，真机无法访问 | 改为 `http://172.20.10.3:8088` |
+| BLE 连接失败（模拟器） | 模拟器不支持 `createBLEConnection` | 用「真机调试」扫码到真实手机 |
+| WiFi 扫描跳权限页 | iOS `wx.startWifi()` 强制触发位置权限 | 已移除 WiFi 扫描，手动输入 |
+| 设备搜索不到（之前配过网） | NVS 有旧 WiFi 凭证，设备在重连而非 BLE 广播 | Mac 擦 NVS：见下方命令；等 5 次重试后设备自动回 BLE |
+| 配网成功但后台看不到设备 | `WS_BASE_URL` 配置错误 | 检查 `.env` 中 `WS_BASE_URL=ws://172.20.10.3:8088` |
+| curl 访问 localhost 502 | Clash 代理拦截 | 加 `--noproxy localhost` 参数 |
+
+**Mac NVS 出厂重置**（清除旧 WiFi 凭证）：
+
+```bash
+~/.espressif/python_env/idf5.4_py3.12_env/bin/python -m esptool \
+  --port /dev/cu.usbmodem212301 --chip esp32s3 \
+  erase_region 0x9000 0x6000
+# 之后物理拔插 USB 让设备重启（RTS 复位不可靠）
+```
 
 ---
 
 ## 当前环境状态（2026-05-10）✅ 全部完成
 
-> **本地环境已全部配置完成，前后端均已验证可登录。**
+> **Mac 本地环境已全部配置完成，前后端均已验证可运行，固件已编译烧录。**
 
 | 服务 | 状态 | 说明 |
 |---|---|---|
-| MySQL 9.7.0 | ✅ 运行中 | Scoop 安装，port 3306，root/xiaozhi123 |
-| Redis 8.6.2 | ✅ 运行中 | Scoop 安装，port 6379，无密码 |
-| 数据库表 | ✅ 完成 | `npm run db:push` 已建 8 张扩展表（含 llm_providers） |
-| 后端 API | ✅ 运行中 | `npm run dev`，port 8088 |
-| 管理前端 | ✅ 运行中 | `npm run dev`，port 5173，已验证可登录 |
+| MySQL 9.6.0 | ✅ 已安装 | Homebrew，port 3306，root/xiaozhi123 |
+| Redis 8.6.3 | ✅ 已安装 | Homebrew，port 6379，无密码 |
+| 数据库表 | ✅ 完成 | `npm run db:push` 已建 8 张扩展表 |
+| 后端 API | ✅ 可运行 | `npm run dev`，port 8088 |
+| 管理前端 | ✅ 可运行 | `npm run dev`，port 5173 |
+| ESP-IDF | ✅ 已安装 | v5.4.1，路径 `~/esp/esp-idf`，Python venv `~/.espressif/python_env/idf5.4_py3.12_env` |
+| 固件 | ✅ 已烧录 | BOOT_REGISTER_URL → `http://172.20.10.3:8088`，串口 `/dev/cu.usbmodem212301` |
 
 **管理后台登录：** http://localhost:5173 — 用户名 `admin` / 密码 `xiaozhi123`
 
-> **注意：** 系统代理（Clash，port 7897）不影响浏览器访问 localhost，但会导致 curl 出现 502，属正常现象。
+> **注意：** Clash 代理（port 7897）不影响浏览器访问，但会导致 curl 出现 502。用 `curl --noproxy localhost` 绕过。
 
 ## EspLink 固件开发（ESP32-S3）
 
-固件项目：`C:\Users\19051\Desktop\ai_deploy\EspLink\esplink-firmware\`
+固件项目：`/Users/hushaohong/vibe-coding/EspLink/esplink-firmware/`
 
-关键配置文件：`main/main.c` 第 27 行 `BOOT_REGISTER_URL`（后端注册地址）、第 180 行传输方式（HTTP 用 `HTTP_TRANSPORT_OVER_TCP`，HTTPS 用 `HTTP_TRANSPORT_OVER_SSL`）。
+关键配置文件：`main/main.c` 第 27 行 `BOOT_REGISTER_URL`（后端注册地址）。
 
-```powershell
-# 激活 ESP-IDF 环境（每次新开终端都需要）
-. "$env:USERPROFILE\esp\esp-idf\export.ps1"
+### Mac 编译烧录（当前环境）
 
-# 编译（必须设 NINJA_JOBS=1，否则 GCC 14.2 段错误）
-cd C:\Users\19051\Desktop\ai_deploy\EspLink\esplink-firmware
-$env:NINJA_JOBS = "1"
-python "$env:USERPROFILE\esp\esp-idf\tools\idf.py" build
+ESP-IDF v5.4.1，需在单条 bash 命令里 source + 运行（环境变量不跨 shell 持久）：
 
-# 烧录（设备接 COM3）
-python "$env:USERPROFILE\esp\esp-idf\tools\idf.py" -p COM3 flash
+```bash
+export IDFY="$HOME/.espressif/python_env/idf5.4_py3.12_env/bin/python $HOME/esp/esp-idf/tools/idf.py"
 
-# 编译 + 烧录 + 串口监视器
-python "$env:USERPROFILE\esp\esp-idf\tools\idf.py" -p COM3 flash monitor
+cd /Users/hushaohong/vibe-coding/EspLink/esplink-firmware
+bash -c '
+  export PATH="/opt/homebrew/bin:$PATH"
+  export IDF_PYTHON_ENV_PATH=$HOME/.espressif/python_env/idf5.4_py3.12_env
+  . $HOME/esp/esp-idf/export.sh > /dev/null 2>&1
+  $HOME/.espressif/python_env/idf5.4_py3.12_env/bin/python \
+    $HOME/esp/esp-idf/tools/idf.py -p /dev/cu.usbmodem212301 build flash
+'
+```
+
+**串口监视** （idf.py monitor 需要 TTY，用 Python 替代）：
+
+```python
+# /tmp/read_serial.py
+import serial, sys, time
+port = serial.Serial('/dev/cu.usbmodem212301', 115200, timeout=0.1)
+port.setDTR(False); port.setRTS(True); time.sleep(0.1); port.setRTS(False)
+start = time.time()
+while time.time() - start < 30:
+    d = port.read(256)
+    if d: sys.stdout.buffer.write(d); sys.stdout.flush()
+port.close()
+```
+
+```bash
+~/.espressif/python_env/idf5.4_py3.12_env/bin/python /tmp/read_serial.py
+```
+
+### API 兼容性注意（v5.4.1 vs v5.5）
+
+`esp_blufi_adv_start_with_name()` 在 v5.4.1 不存在，已替换为：
+
+```c
+ble_svc_gap_device_name_set(app_device_get_ble_name());
+esp_blufi_adv_start();
+```
 ```
 
 > **NINJA_JOBS=1 是必须的**：GCC 14.2.0 在并行编译 `esp_lcd_panel_rgb.c` 时触发 internal compiler error（Segmentation fault），单线程可绕过。
