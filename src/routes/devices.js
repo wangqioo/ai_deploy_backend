@@ -76,9 +76,12 @@ router.post('/:mac/assign-key', async (req, res, next) => {
     const { api_key_id } = req.body || {};
     if (!api_key_id) return res.status(400).json(error(40000, '必须指定API Key'));
 
+    const apiKey = await prisma.apiKey.findUnique({ where: { id: api_key_id }, select: { tenant_id: true } });
+    if (!apiKey) return res.status(404).json(error(40401, 'API Key 不存在'));
+
     const device = await prisma.device.update({
       where: { mac_address: req.params.mac },
-      data: { api_key_id },
+      data: { api_key_id, tenant_id: apiKey.tenant_id },
     });
     res.json(success(device));
   } catch (err) {

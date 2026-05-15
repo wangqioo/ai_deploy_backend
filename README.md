@@ -177,6 +177,39 @@
 
 ---
 
+## 硬件联调快速测试
+
+> 后端、固件编译、小程序调试全部在 **Mac**（`172.20.10.3`）上进行。BLE 连接需用微信开发者工具**真机调试**扫码到真实手机，模拟器不支持。
+
+### 1. 启动 Mac 后端
+
+```bash
+export PATH="/opt/homebrew/bin:$PATH"
+brew services start mysql && brew services start redis
+cd /Users/hushaohong/vibe-coding/ai_deploy_backend && npm run dev
+# 另开终端：cd admin-frontend && npm run dev
+```
+
+### 2. 微信开发者工具配置
+
+- 导入 `/Users/hushaohong/vibe-coding/EspLink/esplink-app/`，AppID = `wxa4fae319f609fdce`
+- **「···」→「项目设置」→「本地设置」** 勾选「不校验合法域名」
+- **设置 → 代理 → 不使用代理**
+- `utils/api.js` 第 1 行：`BASE_URL = 'http://172.20.10.3:8088'`（真机调试须用局域网 IP）
+
+### 3. 配网流程
+
+1. ESP32 上电（BLE 广播已启动，可通过串口日志确认）
+2. 点开发者工具顶部**「真机调试」**，用手机微信扫码
+3. 小程序点「+」→ 找到 `Device-927D70` → 连接 → 手动输入 WiFi 名和密码
+4. 点「开始配网」→ 等待设备注册上线
+5. 小程序弹出绑定确认 → 确认绑定
+6. 管理后台 http://localhost:5173 → 设备管理 → 可见设备在线 ✅
+
+详细排障见 [CLAUDE.md](./CLAUDE.md) 的「硬件联调测试流程」章节。
+
+---
+
 ## 定时任务
 
 | 任务 | 频率 | 说明 |
