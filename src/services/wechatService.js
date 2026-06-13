@@ -2,6 +2,7 @@ const https = require('https');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
+const { touchDevice } = require('../utils/dbTime');
 
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
@@ -53,10 +54,10 @@ async function bootRegister({ mac, board_type, firmware_version }) {
         board_type: board_type || null,
         firmware: firmware_version || null,
         device_key,
-        last_seen: new Date(),
         is_online: false,
       },
     });
+    await touchDevice(mac);
   } else {
     device = await prisma.device.update({
       where: { mac_address: mac },
@@ -64,9 +65,9 @@ async function bootRegister({ mac, board_type, firmware_version }) {
         board_type: board_type || device.board_type,
         firmware: firmware_version || device.firmware,
         device_key,
-        last_seen: new Date(),
       },
     });
+    await touchDevice(mac);
   }
   return { device, device_key };
 }
