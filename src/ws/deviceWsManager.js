@@ -2,7 +2,7 @@ const { WebSocketServer } = require('ws');
 const prisma = require('../config/database');
 const redis = require('../config/redis');
 const llmService = require('../services/llmService');
-const { touchDevice } = require('../utils/dbTime');
+const devicePresence = require('../services/devicePresence');
 
 // mac_address → WebSocket 实例
 const connections = new Map();
@@ -69,7 +69,7 @@ function setup(httpServer) {
     connections.set(mac, ws);
 
     try {
-      await touchDevice(mac, { is_online: true });
+      await devicePresence.markConnected(mac);
     } catch {}
 
     // 切换为正式消息处理器，并重放缓冲中的消息
@@ -89,14 +89,14 @@ function setup(httpServer) {
             where: { mac_address: mac },
             data,
           });
-          await touchDevice(mac, { is_online: true });
+          await devicePresence.markHeartbeat(mac);
         } catch {}
         const latest = await prisma.device.findUnique({ where: { mac_address: mac } });
         ws.send(JSON.stringify({ type: 'hello_ack', is_bound: latest?.wechat_user_id != null }));
 
       } else if (msg.type === 'ping') {
         try {
-          await touchDevice(mac, { is_online: true });
+          await devicePresence.markHeartbeat(mac);
         } catch {}
         ws.send(JSON.stringify({ type: 'pong' }));
 
@@ -140,12 +140,10 @@ function setup(httpServer) {
     });
 
     ws.on('close', async () => {
-      if (connections.get(mac) === ws) connections.delete(mac);
+      if (connections.get(mac) !== ws) return;
+      connections.delete(mac);
       try {
-        await prisma.device.update({
-          where: { mac_address: mac },
-          data: { is_online: false },
-        });
+        await devicePresence.markDisconnected(mac);
       } catch {}
     });
 

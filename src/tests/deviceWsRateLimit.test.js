@@ -10,8 +10,10 @@ jest.mock('../config/database', () => ({
   },
 }));
 
-jest.mock('../utils/dbTime', () => ({
-  touchDevice: jest.fn(() => Promise.resolve()),
+jest.mock('../services/devicePresence', () => ({
+  markConnected: jest.fn(() => Promise.resolve()),
+  markHeartbeat: jest.fn(() => Promise.resolve()),
+  markDisconnected: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock('../services/llmService', () => ({
