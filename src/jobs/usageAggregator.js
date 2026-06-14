@@ -7,7 +7,10 @@ async function aggregateHour(hourStart) {
   // 按 api_key_id 分组统计
   const groups = await prisma.usageLog.groupBy({
     by: ['api_key_id'],
-    where: { timestamp: { gte: hourStart, lt: hourEnd } },
+    where: {
+      timestamp: { gte: hourStart, lt: hourEnd },
+      api_key_id: { not: null },
+    },
     _count: { id: true },
     _sum: { input_tokens: true, output_tokens: true },
   });
@@ -15,14 +18,18 @@ async function aggregateHour(hourStart) {
   if (!groups.length) return;
 
   // 获取每个 key 的 tenant_id
-  const keyIds = groups.map((g) => g.api_key_id);
+  const keyIds = groups.map((g) => g.api_key_id).filter(Boolean);
+  if (!keyIds.length) return;
   const keys = await prisma.apiKey.findMany({ where: { id: { in: keyIds } }, select: { id: true, tenant_id: true } });
   const keyTenantMap = Object.fromEntries(keys.map((k) => [k.id, k.tenant_id]));
 
   // 查成功/失败计数
   const successGroups = await prisma.usageLog.groupBy({
     by: ['api_key_id', 'success'],
-    where: { timestamp: { gte: hourStart, lt: hourEnd } },
+    where: {
+      timestamp: { gte: hourStart, lt: hourEnd },
+      api_key_id: { not: null },
+    },
     _count: { id: true },
   });
 

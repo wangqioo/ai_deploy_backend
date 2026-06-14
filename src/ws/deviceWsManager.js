@@ -1,10 +1,38 @@
 const { WebSocketServer } = require('ws');
 const prisma = require('../config/database');
+const redis = require('../config/redis');
 const llmService = require('../services/llmService');
 const { touchDevice } = require('../utils/dbTime');
 
 // mac_address → WebSocket 实例
 const connections = new Map();
+const AI_RATE_LIMIT = 20;
+const AI_RATE_WINDOW_SECONDS = 60;
+const RATE_LIMIT_SCRIPT = `
+  local key = KEYS[1]
+  local limit = tonumber(ARGV[1])
+  local window = tonumber(ARGV[2])
+  local current = tonumber(redis.call('GET', key) or 0)
+  if current >= limit then return 0 end
+  redis.call('INCR', key)
+  if current == 0 then redis.call('EXPIRE', key, window) end
+  return 1
+`;
+
+async function checkAiRateLimit(mac) {
+  try {
+    const result = await redis.eval(
+      RATE_LIMIT_SCRIPT,
+      1,
+      `ratelimit:device-ai:${mac}`,
+      AI_RATE_LIMIT,
+      AI_RATE_WINDOW_SECONDS
+    );
+    return result !== 0;
+  } catch {
+    return true;
+  }
+}
 
 function setup(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws/device' });
@@ -78,6 +106,11 @@ function setup(httpServer) {
           ws.send(JSON.stringify({ type: 'ai_error', session_id, error: 'messages 不能为空' }));
           return;
         }
+        const allowed = await checkAiRateLimit(mac);
+        if (!allowed) {
+          ws.send(JSON.stringify({ type: 'ai_error', session_id, error: '请求过于频繁，请稍后再试' }));
+          return;
+        }
         const { model, apiKeyId } = await llmService.getModelForDevice(mac);
         await llmService.streamChat({
           messages,
@@ -143,4 +176,4 @@ function isConnected(mac) {
   return !!(ws && ws.readyState === 1);
 }
 
-module.exports = { setup, sendCommand, isConnected };
+module.exports = { setup, sendCommand, isConnected, checkAiRateLimit };

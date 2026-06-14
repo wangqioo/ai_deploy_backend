@@ -12,7 +12,7 @@ router.post('/login', (req, res) => {
   }
 
   const token = jwt.sign(
-    { username, role: 'admin' },
+    { username, type: 'admin', role: 'admin' },
     process.env.JWT_SECRET || 'xiaozhi-secret',
     { expiresIn: '7d' }
   );

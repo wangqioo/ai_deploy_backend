@@ -68,7 +68,13 @@ async function kickDevice(mac) {
 async function unbindDevice(mac) {
   return prisma.device.update({
     where: { mac_address: mac },
-    data: { api_key_id: null, tenant_id: null, is_paired: false, paired_at: null },
+    data: {
+      api_key_id: null,
+      tenant_id: null,
+      wechat_user_id: null,
+      is_paired: false,
+      paired_at: null,
+    },
   });
 }
 

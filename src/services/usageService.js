@@ -37,6 +37,7 @@ async function getSummary({ tenantId } = {}) {
     today_calls: todayCount,
     month_calls: monthCount,
     total_calls: totalCount,
+    online_count: onlineDevices,
     online_devices: onlineDevices,
     total_devices: totalDevices,
     tenant_count: tenantCount,

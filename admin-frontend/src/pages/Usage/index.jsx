@@ -11,7 +11,7 @@ function downloadCSV(logs) {
   const header = ['时间', 'API Key', '设备MAC', '模型', '输入Token', '输出Token', '延迟(ms)', '成功'];
   const rows = logs.map((l) => [
     dayjs(l.timestamp).format('YYYY-MM-DD HH:mm:ss'),
-    l.api_key_id, l.device_mac || '', l.model || '',
+    l.api_key_id || '', l.device_mac || '', l.model || '',
     l.input_tokens, l.output_tokens, l.latency_ms || '',
     l.success ? '是' : '否',
   ]);
@@ -62,7 +62,7 @@ export default function Usage() {
 
   const logColumns = [
     { title: '时间', dataIndex: 'timestamp', width: 170, render: (v) => dayjs(v).format('MM-DD HH:mm:ss') },
-    { title: 'API Key', dataIndex: 'api_key_id', ellipsis: true, width: 180, render: (v, r) => r.api_key?.name || v.slice(0, 16) + '…' },
+    { title: 'API Key', dataIndex: 'api_key_id', ellipsis: true, width: 180, render: (v, r) => r.api_key?.name || (v ? `${v.slice(0, 16)}…` : '—') },
     { title: '设备MAC', dataIndex: 'device_mac', render: (v) => v ? <code style={{ fontSize: 11 }}>{v}</code> : '—' },
     { title: '模型', dataIndex: 'model', render: (v) => v ? <Tag>{v}</Tag> : '—' },
     { title: '输入Token', dataIndex: 'input_tokens', align: 'right' },
