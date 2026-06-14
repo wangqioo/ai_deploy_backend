@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const { touchDevice } = require('../utils/dbTime');
+const DeviceCapability = require('./deviceCapability');
 
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
@@ -126,7 +127,8 @@ async function getDeviceList(wechatUserId) {
     name: d.name || d.board_type || d.mac_address,
     board_type: d.board_type,
     firmware_version: d.firmware,
-    capabilities: d.capabilities ? JSON.parse(d.capabilities) : null,
+    capabilities: DeviceCapability.parseStoredCapabilities(d.capabilities),
+    capability_summary: DeviceCapability.toClientCapabilitySummary(d),
     is_online: d.is_online,
     last_seen_at: d.last_seen,
   }));

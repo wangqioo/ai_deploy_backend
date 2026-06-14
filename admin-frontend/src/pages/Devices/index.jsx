@@ -9,6 +9,85 @@ import 'dayjs/locale/zh-cn';
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
+function getAdminStatus(record) {
+  const rawStatus = typeof record.admin_status === 'string' ? record.admin_status : null;
+  if (['online', 'stale_or_unknown', 'offline'].includes(rawStatus)) return rawStatus;
+
+  if (typeof record.ws_connected === 'boolean') {
+    if (record.ws_connected) return 'online';
+    if (record.db_online === true) return 'stale_or_unknown';
+    return 'offline';
+  }
+
+  if (typeof record.db_online === 'boolean') {
+    return record.db_online ? 'stale_or_unknown' : 'offline';
+  }
+
+  if (typeof record.is_online === 'boolean') {
+    return record.is_online ? 'online' : 'offline';
+  }
+
+  return 'stale_or_unknown';
+}
+
+function renderOnlineStatus(record) {
+  const status = getAdminStatus(record);
+  const badgeStatus = {
+    online: 'success',
+    stale_or_unknown: 'warning',
+    offline: 'default',
+  }[status];
+  const details = [
+    typeof record.ws_connected === 'boolean' ? `WS: ${record.ws_connected ? 'connected' : 'disconnected'}` : null,
+    typeof record.db_online === 'boolean' ? `DB: ${record.db_online ? 'online' : 'offline'}` : null,
+    typeof record.seconds_since_seen === 'number' ? `seen ${record.seconds_since_seen}s ago` : null,
+  ].filter(Boolean).join(' / ');
+
+  const badge = <Badge status={badgeStatus} text={status} />;
+  return details ? <Tooltip title={details}>{badge}</Tooltip> : badge;
+}
+
+function normalizeCapabilities(value) {
+  if (!value) return '';
+  if (Array.isArray(value)) return value.filter(Boolean).join(', ');
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    try {
+      return normalizeCapabilities(JSON.parse(trimmed)) || trimmed;
+    } catch {
+      return trimmed;
+    }
+  }
+  if (typeof value === 'object') {
+    try {
+      return Object.entries(value)
+        .filter(([, item]) => item !== undefined && item !== null && item !== false)
+        .map(([key, item]) => {
+          if (item === true) return key;
+          if (Array.isArray(item)) return `${key}: ${item.filter(Boolean).join(', ')}`;
+          if (typeof item === 'object') return `${key}: ${normalizeCapabilities(item) || 'yes'}`;
+          return `${key}: ${item}`;
+        })
+        .filter(Boolean)
+        .join(' / ');
+    } catch {
+      return '';
+    }
+  }
+  return String(value);
+}
+
+function renderCapabilities(record) {
+  const summary = normalizeCapabilities(record.capabilities_summary) || normalizeCapabilities(record.capabilities);
+  if (!summary) return '—';
+  return (
+    <Typography.Text style={{ maxWidth: 260 }} ellipsis={{ tooltip: summary }}>
+      {summary}
+    </Typography.Text>
+  );
+}
+
 export default function Devices() {
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
@@ -81,9 +160,9 @@ export default function Devices() {
   const columns = [
     {
       title: '在线',
-      dataIndex: 'is_online',
-      width: 60,
-      render: (v) => <Badge status={v ? 'success' : 'default'} />,
+      key: 'online',
+      width: 150,
+      render: (_, record) => renderOnlineStatus(record),
     },
     {
       title: 'MAC 地址',
@@ -99,6 +178,18 @@ export default function Devices() {
           {r.device_id && <div style={{ fontSize: 11, color: '#888' }}>{r.device_id}</div>}
         </div>
       ),
+    },
+    {
+      title: '板型',
+      dataIndex: 'board_type',
+      width: 120,
+      render: (v) => v ? <Tag>{v}</Tag> : '—',
+    },
+    {
+      title: '能力摘要',
+      key: 'capabilities',
+      width: 280,
+      render: (_, record) => renderCapabilities(record),
     },
     { title: '固件版本', dataIndex: 'firmware', render: (v) => v || '—' },
     {
@@ -175,6 +266,7 @@ export default function Devices() {
         columns={columns}
         dataSource={data}
         loading={loading}
+        scroll={{ x: 1200 }}
         pagination={{ current: page, total, pageSize: 20, onChange: setPage, showTotal: (t) => `共 ${t} 台设备` }}
       />
 

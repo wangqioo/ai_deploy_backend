@@ -1,4 +1,6 @@
 const prisma = require('../config/database');
+const deviceWsManager = require('../ws/deviceWsManager');
+const { buildDeviceAdminList, buildDeviceAdminRow } = require('./deviceAdminReadModel');
 
 async function listDevices({ tenantId, isOnline, isPaired, page = 1, pageSize = 20, search }) {
   const where = {
@@ -24,17 +26,22 @@ async function listDevices({ tenantId, isOnline, isPaired, page = 1, pageSize = 
     prisma.device.count({ where }),
   ]);
 
-  return { list, total };
+  return {
+    list: buildDeviceAdminList(list, { isConnected: deviceWsManager.isConnected }),
+    total,
+  };
 }
 
 async function getDevice(mac) {
-  return prisma.device.findUnique({
+  const device = await prisma.device.findUnique({
     where: { mac_address: mac },
     include: {
       api_key: { select: { id: true, name: true, is_active: true } },
       tenant: { select: { id: true, name: true } },
     },
   });
+  if (!device) return null;
+  return buildDeviceAdminRow(device, { wsConnected: deviceWsManager.isConnected(mac) });
 }
 
 async function registerDevice({ mac_address, device_id, firmware, name }) {
