@@ -79,9 +79,6 @@ ADMIN_PASSWORD=xiaozhi123
 # JWT 密钥（改成随机字符串）
 JWT_SECRET=换一个随机字符串
 
-# 设备签名密钥（改成随机字符串，可留空跳过签名校验）
-DEVICE_SIGN_SECRET=换一个随机字符串
-
 # 前端地址（开发时默认 5173）
 CORS_ORIGIN=http://localhost:5173
 
@@ -108,7 +105,7 @@ DEFAULT_AI_MODEL=deepseek-chat
 npm run db:push
 ```
 
-> 这会新建 `tenants`、`api_keys`、`devices`、`usage_logs`、`usage_hourly`、`pair_records`、`wechat_users`、`llm_providers` 共 **8 张**扩展表，**不影响官方已有的表**。
+> 这会新建 `tenants`、`api_keys`、`devices`、`usage_logs`、`usage_hourly`、`wechat_users`、`llm_providers` 共 **7 张**扩展表，**不影响官方已有的表**。
 
 ---
 

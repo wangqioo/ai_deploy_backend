@@ -38,38 +38,13 @@ async function getDevice(mac) {
 }
 
 async function registerDevice({ mac_address, device_id, firmware, name }) {
-  // 检查是否有对应的已完成配对记录
-  let isPaired = false;
-  let pairedAt = null;
-  let tenantId = null;
-
-  if (device_id) {
-    const pairRecord = await prisma.pairRecord.findFirst({
-      where: { device_id, status: 'paired' },
-      orderBy: { updated_at: 'desc' },
-    });
-    if (pairRecord) {
-      isPaired = true;
-      pairedAt = pairRecord.updated_at;
-      tenantId = pairRecord.tenant_id;
-      // 回填 MAC 地址到配对记录
-      await prisma.pairRecord.update({
-        where: { id: pairRecord.id },
-        data: { mac_address },
-      });
-    }
-  }
-
-  const device = await prisma.device.upsert({
+  return prisma.device.upsert({
     where: { mac_address },
     create: {
       mac_address,
       device_id: device_id || null,
       firmware: firmware || null,
       name: name || null,
-      tenant_id: tenantId,
-      is_paired: isPaired,
-      paired_at: pairedAt,
       last_seen: new Date(),
       is_online: true,
     },
@@ -79,11 +54,8 @@ async function registerDevice({ mac_address, device_id, firmware, name }) {
       ...(name && { name }),
       last_seen: new Date(),
       is_online: true,
-      ...(isPaired && { is_paired: true, paired_at: pairedAt, tenant_id: tenantId }),
     },
   });
-
-  return device;
 }
 
 async function kickDevice(mac) {

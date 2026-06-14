@@ -9,7 +9,6 @@
 ## 功能特性
 
 - **BLE 蓝牙配网** — 微信小程序通过 EspLink BLE 协议为 ESP32 配网，配网成功后设备自动注册并绑定到微信账号
-- **扫码配对** — 同时支持微信小程序扫描设备二维码完成配对（备用流程）
 - **WebSocket 长连接** — 固件通过 `/ws/device` 与后端保持长连接，支持实时 AI 对话、指令下发和 OTA 推送
 - **多厂商 LLM 代理** — 后端统一代理 DeepSeek、GLM、MiniMax、Moonshot、通义千问、火山引擎、OpenAI，设备无需持有任何厂商密钥
 - **流式 AI 回答** — 大模型回答通过 WebSocket 逐 chunk 推送给设备，实现实时打字机效果
@@ -86,7 +85,6 @@
 | `api_keys` | API Key，含用量计数和过期时间 |
 | `devices` | 设备，以 MAC 地址为主键；含 `device_key`（WebSocket 认证）、`board_type`、`capabilities`、`wechat_user_id` |
 | `wechat_users` | 微信用户，通过 EspLink 小程序登录自动创建，与设备关联 |
-| `pair_records` | 二维码配对记录，存储 device_id 与用户 openid 的绑定过程 |
 | `usage_logs` | 调用明细，按月分区，保留 7 天；`api_key_id` 可为空（AI WebSocket 调用无需 Key） |
 | `usage_hourly` | 每小时预聚合，统计查询的主要数据源 |
 | `llm_providers` | 大模型厂商配置，管理员在后台填写各厂商 API Key；`provider` 字段唯一 |
@@ -106,8 +104,6 @@
 | 设备 | `POST /api/v1/devices/register` | 固件自注册（无需认证） |
 | 设备 | `POST /api/v1/devices/:mac/kick` | 强制下线 |
 | 设备 | `POST /api/v1/devices/:mac/unbind` | 解绑 |
-| 配对 | `POST /api/v1/pair/verify` | 小程序发起配对（无需认证） |
-| 配对 | `POST /api/v1/pair/confirm` | 小程序确认配对（无需认证） |
 | 用量 | `GET /api/v1/usage/summary` | 汇总统计 |
 | 用量 | `GET /api/v1/usage/daily` | 按天趋势 |
 | 用量 | `GET /api/v1/usage/logs` | 调用明细（7天内） |
@@ -150,9 +146,9 @@
 
 ---
 
-## 设备配网与配对流程
+## 设备配网与绑定流程
 
-### EspLink BLE 配网流程（主流程）
+### EspLink BLE 配网流程
 
 ```
 1. 设备上电，无 WiFi 凭证 → 启动 BLE 广播 "Device-AABBCC"
@@ -163,18 +159,6 @@
 5. 固件建立 WebSocket 长连接 /ws/device，发送 hello 握手
 6. 小程序轮询 GET /api/device/lookup?mac_suffix=AABBCC 等待设备上线
 7. 发现设备 → 调用 POST /api/device/bind → 设备绑定到微信账号
-```
-
-### 二维码配对流程（备用流程）
-
-```
-1. 设备出厂时二维码内含唯一 device_id
-2. 用户微信扫码 → 小程序获得 device_id
-3. 小程序调用 POST /api/v1/pair/verify  →  返回 pair_token（5分钟有效）
-4. 用户在小程序确认绑定
-5. 小程序调用 POST /api/v1/pair/confirm  →  配对完成，openid 与设备绑定
-6. 设备开机后调用 POST /api/v1/devices/register（携带 mac_address + device_id）
-7. 后端自动关联配对记录，设备进入已配对状态
 ```
 
 ---
