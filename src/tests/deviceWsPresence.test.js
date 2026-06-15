@@ -133,6 +133,41 @@ describe('device WS presence integration', () => {
     );
   });
 
+  test('normalizes firmware version reported by hello before storing it', async () => {
+    prisma.device.findUnique.mockResolvedValue({ wechat_user_id: null });
+    const { setup } = require('../ws/deviceWsManager');
+    const wss = setup({});
+    const req = { headers: { authorization: 'Bearer device-token' } };
+    const socket = createFakeSocket();
+
+    await wss.handlers.connection(socket, req);
+    await socket.emitMessage(Buffer.from(JSON.stringify({
+      type: 'hello',
+      firmware_version: 'v02.004.001',
+    })));
+
+    expect(prisma.device.update).toHaveBeenCalledWith({
+      where: { mac_address: 'AA:BB:CC:DD:EE:FF' },
+      data: { firmware: '2.4.1' },
+    });
+  });
+
+  test('does not update stored firmware when hello reports a malformed version', async () => {
+    prisma.device.findUnique.mockResolvedValue({ wechat_user_id: null });
+    const { setup } = require('../ws/deviceWsManager');
+    const wss = setup({});
+    const req = { headers: { authorization: 'Bearer device-token' } };
+    const socket = createFakeSocket();
+
+    await wss.handlers.connection(socket, req);
+    await socket.emitMessage(Buffer.from(JSON.stringify({
+      type: 'hello',
+      firmware_version: 'latest',
+    })));
+
+    expect(prisma.device.update).not.toHaveBeenCalled();
+  });
+
   test('subscribes to instance command channel and forwards broker messages to local socket', async () => {
     const { setup } = require('../ws/deviceWsManager');
     const wss = setup({});

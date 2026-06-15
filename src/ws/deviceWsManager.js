@@ -5,6 +5,7 @@ const devicePresence = require('../services/devicePresence');
 const devicePresenceProjection = require('../services/devicePresenceProjection');
 const deviceCommandBroker = require('../services/deviceCommandBroker');
 const { consume } = require('../services/rateLimiter');
+const { normalizeVersion } = require('../services/firmwareVersionPolicy');
 
 // mac_address → WebSocket 实例
 const connections = new Map();
@@ -81,14 +82,17 @@ function setup(httpServer) {
 
       if (msg.type === 'hello') {
         try {
+          const firmwareVersion = normalizeVersion(msg.firmware_version);
           const data = {
-            ...(msg.firmware_version && { firmware: msg.firmware_version }),
+            ...(firmwareVersion && { firmware: firmwareVersion }),
             ...(msg.capabilities && { capabilities: JSON.stringify(msg.capabilities) }),
           };
-          await prisma.device.update({
-            where: { mac_address: mac },
-            data,
-          });
+          if (Object.keys(data).length > 0) {
+            await prisma.device.update({
+              where: { mac_address: mac },
+              data,
+            });
+          }
           await devicePresence.markHeartbeat(mac);
           await devicePresenceProjection.heartbeat(mac, { ownerId });
         } catch {}

@@ -66,4 +66,44 @@ describe('otaCheckService', () => {
       ota: null,
     });
   });
+
+  test('normalizes reported firmware version before boot registration', async () => {
+    wechatService.bootRegister.mockResolvedValue({
+      device_key: 'device-token',
+      device: { wechat_user_id: null },
+    });
+    const { checkBootReport } = require('../services/otaCheckService');
+
+    await checkBootReport({
+      mac: 'AA:BB:CC:DD:EE:FF',
+      board_type: 'esp32-s3-box',
+      firmware_version: 'v02.004.001',
+    });
+
+    expect(wechatService.bootRegister).toHaveBeenCalledWith({
+      mac: 'AA:BB:CC:DD:EE:FF',
+      board_type: 'esp32-s3-box',
+      firmware_version: '2.4.1',
+    });
+  });
+
+  test('passes null firmware version when the device reports a malformed version', async () => {
+    wechatService.bootRegister.mockResolvedValue({
+      device_key: 'device-token',
+      device: { wechat_user_id: null },
+    });
+    const { checkBootReport } = require('../services/otaCheckService');
+
+    await checkBootReport({
+      mac: 'AA:BB:CC:DD:EE:FF',
+      board_type: 'esp32-s3-box',
+      firmware_version: 'latest',
+    });
+
+    expect(wechatService.bootRegister).toHaveBeenCalledWith({
+      mac: 'AA:BB:CC:DD:EE:FF',
+      board_type: 'esp32-s3-box',
+      firmware_version: null,
+    });
+  });
 });

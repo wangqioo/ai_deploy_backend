@@ -1,11 +1,16 @@
 const { bootRegister } = require('./wechatService');
+const { normalizeVersion } = require('./firmwareVersionPolicy');
 
 function getWebSocketBaseUrl() {
   return process.env.WS_BASE_URL || `ws://localhost:${process.env.PORT || 8088}`;
 }
 
 async function checkBootReport({ mac, board_type, firmware_version }) {
-  const { device, device_key } = await bootRegister({ mac, board_type, firmware_version });
+  const { device, device_key } = await bootRegister({
+    mac,
+    board_type,
+    firmware_version: normalizeVersion(firmware_version),
+  });
   const wsBase = getWebSocketBaseUrl();
 
   return {
