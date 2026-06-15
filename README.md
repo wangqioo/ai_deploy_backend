@@ -84,6 +84,7 @@
 | `tenants` | 租户，含每日/月限额、告警 Webhook、`ai_model`（分配给该租户的模型，即套餐） |
 | `api_keys` | API Key，含用量计数和过期时间 |
 | `devices` | 设备，以 MAC 地址为主键；含 `device_key`（WebSocket 认证）、`board_type`、`capabilities`、`wechat_user_id` |
+| `production_keys` | 量产设备预共享密钥；`REQUIRE_DEVICE_PSK=true` 时用于校验 `/api/ota/check` HMAC 签名 |
 | `wechat_users` | 微信用户，通过 EspLink 小程序登录自动创建，与设备关联 |
 | `usage_logs` | 调用明细，按月分区，保留 7 天；`api_key_id` 可为空（AI WebSocket 调用无需 Key） |
 | `usage_hourly` | 每小时预聚合，统计查询的主要数据源 |
@@ -119,7 +120,7 @@
 | 模块 | 路径 | 认证 | 说明 |
 |---|---|---|---|
 | 微信登录 | `POST /api/auth/wechat` | 无 | 小程序 code 换 JWT token |
-| 固件注册 | `POST /api/ota/check` | 无 | 设备上电注册，返回 device_key + ws 地址 |
+| 固件注册 | `POST /api/ota/check` | 默认无；生产可启用 PSK HMAC | 设备上电注册，返回 device_key + ws 地址 |
 | 设备列表 | `GET /api/device/list` | 微信 JWT | 当前用户的绑定设备 |
 | 设备查找 | `GET /api/device/lookup?mac_suffix=AABBCC` | 微信 JWT | 按 MAC 后三字节查找刚上线设备 |
 | 设备绑定 | `POST /api/device/bind` | 微信 JWT | 绑定设备到微信账号 |

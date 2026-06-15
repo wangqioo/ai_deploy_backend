@@ -172,7 +172,7 @@ npm run dev
 # 1. 健康检查
 Invoke-RestMethod -Uri "http://localhost:8088/api/v1/health/ready"
 
-# 2. 模拟固件注册
+# 2. 模拟固件注册（默认 REQUIRE_DEVICE_PSK=false 时无需签名）
 $body = @{ mac = "AA:BB:CC:DD:EE:01"; board_type = "esp32s3"; firmware_version = "1.0.0" } | ConvertTo-Json
 $res = Invoke-RestMethod -Uri "http://localhost:8088/api/ota/check" -Method POST -Body $body -ContentType "application/json"
 $res   # 应返回 token + websocket_url
@@ -181,6 +181,8 @@ $res   # 应返回 token + websocket_url
 $deviceKey = $res.token
 Write-Host "device_key: $deviceKey"
 ```
+
+若 `.env` 设置了 `REQUIRE_DEVICE_PSK=true`，需先应用 `db/migrations/2026-06-15-create-production-keys.sql` 并写入对应 MAC 的 `production_keys` 记录；模拟请求还必须携带 `sn`、`timestamp`、`nonce`、`signature`。
 
 ### 第二阶段：WebSocket 测试
 
@@ -350,6 +352,7 @@ Redis 断线时限流和 Key 缓存会自动降级（放行请求），不影响
 
 **Q: 固件调用 `/api/ota/check` 失败**
 固件的 `BOOT_REGISTER_URL`（`main.c` 第27行）需改为后端实际地址。开发环境无法用 `localhost`，需用电脑局域网 IP（如 `http://192.168.x.x:8088/api/ota/check`），生产用域名。
+如果后端开启了 `REQUIRE_DEVICE_PSK=true`，还要确认已执行 `db/migrations/2026-06-15-create-production-keys.sql`，并且该设备在 `production_keys` 中有可用密钥；固件请求需带 `sn`、`timestamp`、`nonce` 和 HMAC `signature`。
 
 **Q: WebSocket 设备无法连接**
 1. 检查 `.env` 中 `WS_BASE_URL` 是否与固件能访问的地址一致

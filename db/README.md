@@ -12,6 +12,16 @@ To create the table needed by OTA release decisions, use host/user/database flag
 mysql -h127.0.0.1 -P3306 -uroot -p xiaozhi < db/migrations/2026-06-15-create-firmware-releases.sql
 ```
 
+## Production Keys
+
+`REQUIRE_DEVICE_PSK=true` requires a provisioned production key row for each device before it can call `POST /api/ota/check`:
+
+```bash
+mysql -h127.0.0.1 -P3306 -uroot -p xiaozhi < db/migrations/2026-06-15-create-production-keys.sql
+```
+
+Enable the env flag only after the table exists and the target devices have `production_keys` rows. Otherwise boot registration returns `403`.
+
 Local development can still use:
 
 ```bash

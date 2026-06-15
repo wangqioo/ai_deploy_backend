@@ -67,6 +67,7 @@ NODE_ENV=production
 WX_APPID=                # 空 = dev 模式，code 直接当 openid
 WX_SECRET=
 WS_BASE_URL=ws://150.158.146.192:6050
+REQUIRE_DEVICE_PSK=false       # 验证阶段默认关闭；量产开启前需先写入 production_keys
 DEFAULT_AI_MODEL=deepseek-chat
 ```
 
@@ -95,7 +96,7 @@ DEFAULT_AI_MODEL=deepseek-chat
 #### Step ① ESP32 上电注册（HTTP）
 
 **接口**: `POST /api/ota/check`
-**鉴权**: 无（完全公开）
+**鉴权**: 验证阶段默认无；`REQUIRE_DEVICE_PSK=true` 时必须携带 HMAC 签名
 **请求**:
 ```json
 {
@@ -211,7 +212,7 @@ DEFAULT_AI_MODEL=deepseek-chat
 
 ### 4.1 问题本质
 
-当前 `/api/ota/check` **完全公开、无任何鉴权**。任何知道该 URL 的人（或设备）都可以注册任意 MAC 地址获得 token，进而连接 WebSocket 消耗 AI 额度。
+默认配置下 `/api/ota/check` 仍保持开放，方便硬件联调。生产环境应在完成 `production_keys` 预置后设置 `REQUIRE_DEVICE_PSK=true`，否则任何知道该 URL 的人（或设备）都可以注册任意 MAC 地址获得 token，进而连接 WebSocket 消耗 AI 额度。
 
 ### 4.2 攻击场景
 
@@ -223,17 +224,17 @@ DEFAULT_AI_MODEL=deepseek-chat
 4. 消耗的是我们的计费额度
 ```
 
-### 4.3 为什么当前不改
+### 4.3 当前实现状态
 
-- 验证阶段尚无量产烧录流程，无法注入生产密钥
-- 无真实用户，无计费压力
-- 链路调通优先级高于安全加固
+- 已添加 `production_keys` 表、`REQUIRE_DEVICE_PSK` 开关和 `/api/ota/check` HMAC 校验路径
+- 默认 `REQUIRE_DEVICE_PSK=false` 保持旧设备和本地硬件调试兼容
+- 生产开启前必须先应用 `db/migrations/2026-06-15-create-production-keys.sql`，并为每台设备写入密钥记录
 
-### 4.4 推荐的量产方案：PSK 设备身份认证
+### 4.4 量产方案：PSK 设备身份认证
 
 #### 方案概述
 
-每个设备在烧录时注入唯一的预共享密钥（PSK），注册时用 PSK 对 MAC + SN 做 HMAC 签名，服务器验证签名。
+每个设备在烧录时注入唯一的预共享密钥（PSK），注册时用 PSK 对 MAC + SN + timestamp + nonce 做 HMAC 签名，服务器验证签名并拒绝时间戳过期或 nonce 重放。
 
 #### 烧录阶段
 
@@ -244,7 +245,7 @@ for mac, sn in production_list:
     # 写入 ESP32 NVS
     esptool.write_nvs("device_psk", psk)
     # 写入服务器生产密钥库
-    db.insert("production_keys", mac=mac, psk=psk)
+    db.insert("production_keys", mac_address=mac, sn=sn, psk_encrypted=psk, psk_hash=sha256(psk))
 ```
 
 #### 注册阶段
@@ -255,13 +256,30 @@ ESP32 → POST /api/ota/check
           mac: "AA:BB:CC:DD:EE:01",
           sn: "SN001",
           board_type: "esplink-v1",
-          signature: HMAC-SHA256(mac + sn, PSK)
+          firmware_version: "1.0.0",
+          timestamp: 1781490000,
+          nonce: "random-boot-nonce",
+          signature: HMAC-SHA256("MAC\\nSN\\ntimestamp\\nnonce", PSK)
         }
 
 服务器:
   1. 按 mac 在 production_keys 表查到 PSK
-  2. 自己计算 HMAC-SHA256(mac + sn, psk)
-  3. 比对 → 匹配则允许注册，否则 403 Forbidden
+  2. 检查 timestamp 是否在 5 分钟窗口内、nonce 是否未重复
+  3. 自己计算 HMAC-SHA256("MAC\\nSN\\ntimestamp\\nnonce", psk)
+  4. 比对 → 匹配则允许注册，否则 403 Forbidden
+```
+
+#### 启用顺序
+
+```bash
+mysql -h127.0.0.1 -P3306 -uroot -p xiaozhi < db/migrations/2026-06-15-create-production-keys.sql
+npm run db:generate
+```
+
+然后写入每台设备的 `production_keys` 记录，最后在 `.env` 中设置：
+
+```env
+REQUIRE_DEVICE_PSK=true
 ```
 
 #### 优势
@@ -283,7 +301,7 @@ ESP32 → POST /api/ota/check
 
 | 维度 | 当前（验证阶段） | 量产方案 |
 |------|-----------------|---------|
-| 注册端点 | 完全公开 | PSK 签名验证 |
+| 注册端点 | 默认开放 | `REQUIRE_DEVICE_PSK=true` 后 PSK 签名验证 |
 | Token 生成 | 32 字节随机 hex，静态 | 32 字节随机 hex，可轮换 |
 | MAC 校验 | 不校验 | 通过 PSK 间接验证 |
 | WebSocket 鉴权 | Bearer device_key | Bearer device_key（不变） |
@@ -358,7 +376,7 @@ remotePort = 6050
 ### 7.2 中期（量产前）
 
 - [ ] 设计 PSK 烧录流程和密钥管理方案
-- [ ] 添加 production_keys 表和注册鉴权中间件
+- [x] 添加 production_keys 表和注册鉴权中间件
 - [ ] Token 轮换机制
 - [ ] 速率限制和滥用防护
 - [ ] 管理后台增加设备管理和日志查看功能

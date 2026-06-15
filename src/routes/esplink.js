@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const wechatAuth = require('../middleware/wechatAuth');
 const svc = require('../services/wechatService');
+const deviceIdentityService = require('../services/deviceIdentityService');
 const otaCheckService = require('../services/otaCheckService');
 const prisma = require('../config/database');
 const policy = require('../services/deviceCommandPolicy');
@@ -25,6 +26,12 @@ router.post('/ota/check', async (req, res, next) => {
   try {
     const { mac, board_type, firmware_version } = req.body;
     if (!mac) return res.status(400).json({ detail: 'mac 不能为空' });
+
+    const identity = await deviceIdentityService.verifyBootRequest(req.body);
+    if (!identity.allowed) {
+      return res.status(identity.statusCode || 403).json({ detail: identity.reason });
+    }
+
     const result = await otaCheckService.checkBootReport({ mac, board_type, firmware_version });
     res.json(result);
   } catch (err) {
