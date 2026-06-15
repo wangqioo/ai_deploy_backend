@@ -139,3 +139,23 @@ model UsageHourly {
   @@index([tenant_id, hour_timestamp])
   @@map("usage_hourly")
 }
+
+model FirmwareRelease {
+  id            Int      @id @default(autoincrement())
+  board_type    String   @db.VarChar(64)
+  version       String   @db.VarChar(64)
+  artifact_url  String   @db.Text
+  sha256        String   @db.VarChar(128)
+  size_bytes    Int?
+  channel       String   @default("stable") @db.VarChar(32)
+  is_active     Boolean  @default(true)
+  force_update  Boolean  @default(false)
+  release_notes String?  @db.Text
+  created_at    DateTime @default(now()) @db.DateTime(0)
+  updated_at    DateTime @updatedAt @db.DateTime(0)
+
+  @@unique([board_type, channel, version])
+  @@index([board_type, channel, is_active])
+  @@index([board_type, version])
+  @@map("firmware_releases")
+}

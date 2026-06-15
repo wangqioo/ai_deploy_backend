@@ -26,7 +26,7 @@
 **Files:**
 - Modify: `prisma/schema.prisma`
 
-- [ ] **Step 1: Add the Prisma model**
+- [x] **Step 1: Add the Prisma model**
 
 Append this model after `UsageHourly`:
 
@@ -52,7 +52,7 @@ model FirmwareRelease {
 }
 ```
 
-- [ ] **Step 2: Validate schema formatting**
+- [x] **Step 2: Validate schema formatting**
 
 Run:
 
@@ -62,7 +62,7 @@ npx prisma format
 
 Expected: command exits 0 and keeps the new model in `prisma/schema.prisma`.
 
-- [ ] **Step 3: Commit schema**
+- [x] **Step 3: Commit schema**
 
 ```bash
 git add prisma/schema.prisma
@@ -77,7 +77,7 @@ Do not stage `package-lock.json` or `admin-frontend/package-lock.json`.
 - Create: `src/services/firmwareReleaseService.js`
 - Create: `src/tests/firmwareReleaseService.test.js`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Create `src/tests/firmwareReleaseService.test.js`:
 
@@ -212,7 +212,7 @@ describe('firmwareReleaseService', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -222,7 +222,7 @@ npx jest src/tests/firmwareReleaseService.test.js --runInBand --forceExit
 
 Expected: FAIL with `Cannot find module '../services/firmwareReleaseService'`.
 
-- [ ] **Step 3: Implement release service**
+- [x] **Step 3: Implement release service**
 
 Create `src/services/firmwareReleaseService.js`:
 
@@ -334,7 +334,7 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Run service tests**
+- [x] **Step 4: Run service tests**
 
 Run:
 
@@ -344,7 +344,7 @@ npx jest src/tests/firmwareReleaseService.test.js --runInBand --forceExit
 
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit service**
+- [x] **Step 5: Commit service**
 
 ```bash
 git add src/services/firmwareReleaseService.js src/tests/firmwareReleaseService.test.js
@@ -359,7 +359,7 @@ git commit -m "feat: add firmware release service"
 
 **Dependency:** Task 2 must be committed first so `src/services/firmwareReleaseService.js` exists for Jest mocks.
 
-- [ ] **Step 1: Extend OTA service mocks and tests**
+- [x] **Step 1: Extend OTA service mocks and tests**
 
 Update the top of `src/tests/otaCheckService.test.js`:
 
@@ -483,7 +483,7 @@ Add these tests inside the existing `describe('otaCheckService', () => { ... })`
   });
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -493,7 +493,7 @@ npx jest src/tests/otaCheckService.test.js --runInBand --forceExit
 
 Expected: FAIL because `otaCheckService` still returns `update_available: false`.
 
-- [ ] **Step 3: Implement OTA decision**
+- [x] **Step 3: Implement OTA decision**
 
 Update `src/services/otaCheckService.js` to import:
 
@@ -568,7 +568,7 @@ Change `checkBootReport` after `bootRegister`:
 
 Keep the existing boot registration normalization before `bootRegister`.
 
-- [ ] **Step 4: Run OTA tests**
+- [x] **Step 4: Run OTA tests**
 
 Run:
 
@@ -578,7 +578,7 @@ npx jest src/tests/otaCheckService.test.js src/tests/firmwareReleaseService.test
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit OTA decision**
+- [x] **Step 5: Commit OTA decision**
 
 ```bash
 git add src/services/otaCheckService.js src/tests/otaCheckService.test.js
@@ -592,7 +592,7 @@ git commit -m "feat: select firmware release for ota checks"
 - Modify: `src/routes/index.js`
 - Create: `src/tests/firmwareRoutes.test.js`
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Create `src/tests/firmwareRoutes.test.js`:
 
@@ -695,7 +695,7 @@ describe('firmware admin routes', () => {
 });
 ```
 
-- [ ] **Step 2: Run route tests to verify RED**
+- [x] **Step 2: Run route tests to verify RED**
 
 Run:
 
@@ -705,7 +705,7 @@ npx jest src/tests/firmwareRoutes.test.js --runInBand --forceExit
 
 Expected: FAIL with `Cannot find module '../routes/firmware'`.
 
-- [ ] **Step 3: Implement routes**
+- [x] **Step 3: Implement routes**
 
 Create `src/routes/firmware.js`:
 
@@ -775,7 +775,7 @@ router.use('/firmware', require('./firmware'));
 
 Place it with the other admin route mounts.
 
-- [ ] **Step 4: Run route tests**
+- [x] **Step 4: Run route tests**
 
 Run:
 
@@ -785,7 +785,7 @@ npx jest src/tests/firmwareRoutes.test.js --runInBand --forceExit
 
 Expected: PASS, 4 tests.
 
-- [ ] **Step 5: Commit routes**
+- [x] **Step 5: Commit routes**
 
 ```bash
 git add src/routes/firmware.js src/routes/index.js src/tests/firmwareRoutes.test.js
@@ -797,7 +797,7 @@ git commit -m "feat: add firmware release admin routes"
 **Files:**
 - Verify backend files only.
 
-- [ ] **Step 1: Run targeted tests**
+- [x] **Step 1: Run targeted tests**
 
 Run:
 
@@ -807,7 +807,7 @@ npx jest src/tests/firmwareReleaseService.test.js src/tests/otaCheckService.test
 
 Expected: PASS.
 
-- [ ] **Step 2: Check formatting diff**
+- [x] **Step 2: Check formatting diff**
 
 Run:
 
@@ -817,7 +817,7 @@ git diff --check
 
 Expected: no output, exit 0.
 
-- [ ] **Step 3: Run full backend tests**
+- [x] **Step 3: Run full backend tests**
 
 Run:
 
@@ -827,7 +827,7 @@ npm test
 
 Expected: all Jest suites pass.
 
-- [ ] **Step 4: Final status check**
+- [x] **Step 4: Final status check**
 
 Run:
 
@@ -842,6 +842,6 @@ Expected: only known unrelated lockfile changes may remain:
  M package-lock.json
 ```
 
-- [ ] **Step 5: Commit plan progress if this file was updated**
+- [x] **Step 5: Commit plan progress if this file was updated**
 
 If you checked off items in this plan during execution, commit the plan update with the final implementation commit or amend the relevant task commit. Do not create a docs-only commit just for checkbox churn unless all code is already committed.
