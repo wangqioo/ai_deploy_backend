@@ -28,6 +28,12 @@ jest.mock('../services/devicePresence', () => ({
   markDisconnected: jest.fn(() => Promise.resolve()),
 }));
 
+jest.mock('../services/devicePresenceProjection', () => ({
+  register: jest.fn(() => Promise.resolve()),
+  heartbeat: jest.fn(() => Promise.resolve()),
+  disconnect: jest.fn(() => Promise.resolve()),
+}));
+
 jest.mock('../services/llmService', () => ({
   getModelForDevice: jest.fn(),
   streamChat: jest.fn(),
@@ -35,6 +41,7 @@ jest.mock('../services/llmService', () => ({
 
 const prisma = require('../config/database');
 const devicePresence = require('../services/devicePresence');
+const devicePresenceProjection = require('../services/devicePresenceProjection');
 
 function createFakeSocket() {
   const handlers = {};
@@ -50,6 +57,9 @@ function createFakeSocket() {
     emit: jest.fn((event, ...args) => {
       for (const handler of handlers[event] || []) handler(...args);
     }),
+    emitMessage: async function emitMessage(raw) {
+      for (const handler of handlers.message || []) await handler(raw);
+    },
     emitClose: async function emitClose() {
       for (const handler of handlers.close || []) await handler();
     },
@@ -83,9 +93,37 @@ describe('device WS presence integration', () => {
 
     expect(firstSocket.close).toHaveBeenCalledWith(4000, 'replaced');
     expect(devicePresence.markDisconnected).not.toHaveBeenCalled();
+    expect(devicePresenceProjection.disconnect).not.toHaveBeenCalled();
 
     await secondSocket.emitClose();
 
     expect(devicePresence.markDisconnected).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF');
+    expect(devicePresenceProjection.disconnect).toHaveBeenCalledWith(
+      'AA:BB:CC:DD:EE:FF',
+      { ownerId: expect.stringContaining(':') }
+    );
+  });
+
+  test('projects connect and heartbeat with the active connection owner id', async () => {
+    const { setup } = require('../ws/deviceWsManager');
+    const wss = setup({});
+    const req = { headers: { authorization: 'Bearer device-token' } };
+    const socket = createFakeSocket();
+
+    await wss.handlers.connection(socket, req);
+    const registerOwnerId = devicePresenceProjection.register.mock.calls[0][1].ownerId;
+    await socket.emitMessage(Buffer.from(JSON.stringify({ type: 'ping' })));
+
+    expect(devicePresenceProjection.register).toHaveBeenCalledWith(
+      'AA:BB:CC:DD:EE:FF',
+      expect.objectContaining({
+        ownerId: registerOwnerId,
+        instanceId: expect.any(String),
+      })
+    );
+    expect(devicePresenceProjection.heartbeat).toHaveBeenCalledWith(
+      'AA:BB:CC:DD:EE:FF',
+      { ownerId: registerOwnerId }
+    );
   });
 });

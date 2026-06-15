@@ -2,12 +2,20 @@ const { WebSocketServer } = require('ws');
 const prisma = require('../config/database');
 const llmService = require('../services/llmService');
 const devicePresence = require('../services/devicePresence');
+const devicePresenceProjection = require('../services/devicePresenceProjection');
 const { consume } = require('../services/rateLimiter');
 
 // mac_address → WebSocket 实例
 const connections = new Map();
 const AI_RATE_LIMIT = 20;
 const AI_RATE_WINDOW_SECONDS = 60;
+const INSTANCE_ID = process.env.INSTANCE_ID || `${process.pid}`;
+let connectionSeq = 0;
+
+function nextOwnerId() {
+  connectionSeq += 1;
+  return `${INSTANCE_ID}:${Date.now()}:${connectionSeq}`;
+}
 
 async function checkAiRateLimit(mac) {
   return consume(mac, {
@@ -46,6 +54,7 @@ function setup(httpServer) {
     }
 
     const mac = device.mac_address;
+    const ownerId = nextOwnerId();
     // 踢掉同一设备的旧连接
     const old = connections.get(mac);
     if (old && old.readyState === 1) old.close(4000, 'replaced');
@@ -53,6 +62,9 @@ function setup(httpServer) {
 
     try {
       await devicePresence.markConnected(mac);
+    } catch {}
+    try {
+      await devicePresenceProjection.register(mac, { ownerId, instanceId: INSTANCE_ID });
     } catch {}
 
     // 切换为正式消息处理器，并重放缓冲中的消息
@@ -73,6 +85,7 @@ function setup(httpServer) {
             data,
           });
           await devicePresence.markHeartbeat(mac);
+          await devicePresenceProjection.heartbeat(mac, { ownerId });
         } catch {}
         const latest = await prisma.device.findUnique({ where: { mac_address: mac } });
         ws.send(JSON.stringify({ type: 'hello_ack', is_bound: latest?.wechat_user_id != null }));
@@ -80,6 +93,7 @@ function setup(httpServer) {
       } else if (msg.type === 'ping') {
         try {
           await devicePresence.markHeartbeat(mac);
+          await devicePresenceProjection.heartbeat(mac, { ownerId });
         } catch {}
         ws.send(JSON.stringify({ type: 'pong' }));
 
@@ -127,6 +141,7 @@ function setup(httpServer) {
       connections.delete(mac);
       try {
         await devicePresence.markDisconnected(mac);
+        await devicePresenceProjection.disconnect(mac, { ownerId });
       } catch {}
     });
 
