@@ -104,20 +104,52 @@ Smallest app partition is 0x180000 bytes. 0x5d420 bytes (24%) free.
 
 ## 3. 发布 OTA 包
 
-把 bin 放到后端静态目录：
+推荐使用管理后台发布：
 
-```bash
-cd /Users/wq/ai_deploy_backend
-mkdir -p admin-frontend/dist/firmware
-cp /Users/wq/EspLink/esplink-firmware/build/esp32s3_device.bin \
-  admin-frontend/dist/firmware/esplink-v1-1.0.1.bin
+1. 打开 `http://127.0.0.1:5173`。
+2. 使用 `admin / xiaozhi123` 登录。
+3. 进入 `固件发布`。
+4. 点击 `新建发布`。
+5. 点击 `选择并上传 .bin`，选择构建出的固件包，例如：
+
+```text
+/Users/wq/EspLink/esplink-firmware/build/esp32s3_device.bin
 ```
 
-计算元数据：
+上传后，页面会自动填入：
+
+- 固件地址
+- SHA256
+- 文件大小（字节）
+
+如果文件名符合 `板型-版本号.bin`，例如 `esplink-v1-1.0.2.bin`，页面还会自动填入目标板型和版本号。否则手动填写：
+
+```text
+目标板型：esplink-v1
+版本号：1.0.1
+渠道：stable
+启用：打开
+强制升级：按测试需要选择，默认关闭
+发布说明：Local OTA validation build
+```
+
+点击 `确定` 后，后台会创建 firmware release。上传的固件会保存在：
+
+```text
+/Users/wq/ai_deploy_backend/uploads/firmware/
+```
+
+并通过后端静态地址提供下载：
+
+```text
+http://192.168.1.26:8088/firmware/<filename>.bin
+```
+
+命令行备选：手动计算元数据：
 
 ```bash
-shasum -a 256 admin-frontend/dist/firmware/esplink-v1-1.0.1.bin
-wc -c admin-frontend/dist/firmware/esplink-v1-1.0.1.bin
+shasum -a 256 /Users/wq/EspLink/esplink-firmware/build/esp32s3_device.bin
+wc -c /Users/wq/EspLink/esplink-firmware/build/esp32s3_device.bin
 ```
 
 本次实测：
@@ -127,11 +159,11 @@ sha256     = 0c37779f93b3d44940ab9f0325d962396d0629c31613f5bb663edf154d5098e3
 size_bytes = 1190880
 ```
 
-验证后端可下载：
+验证后端可下载。把 `<filename>` 替换成页面返回的文件名：
 
 ```bash
 curl --noproxy '*' -I \
-  http://192.168.1.26:8088/firmware/esplink-v1-1.0.1.bin
+  http://192.168.1.26:8088/firmware/<filename>.bin
 ```
 
 期望：
@@ -144,7 +176,9 @@ Content-Length: 1190880
 
 ## 4. 创建 Firmware Release
 
-登录获取 admin token：
+网页发布成功后，可以直接跳到 OTA check 验证。
+
+命令行备选：如果不使用网页，可以先登录获取 admin token：
 
 ```bash
 ADMIN_TOKEN=$(curl --noproxy '*' -s \
@@ -154,7 +188,18 @@ ADMIN_TOKEN=$(curl --noproxy '*' -s \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).data.token))')
 ```
 
-创建发布：
+上传固件包并获取 URL、SHA256、文件大小：
+
+```bash
+curl --noproxy '*' -s \
+  -H 'Content-Type: application/octet-stream' \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'X-Firmware-Filename: esplink-v1-1.0.1.bin' \
+  --data-binary @/Users/wq/EspLink/esplink-firmware/build/esp32s3_device.bin \
+  http://192.168.1.26:8088/api/v1/firmware/artifacts
+```
+
+再创建发布：
 
 ```bash
 curl --noproxy '*' -s \
@@ -374,6 +419,6 @@ Warning: Checksum mismatch between flashed and built applications.
 ## 收尾建议
 
 - 每次实机 OTA 验证后，把固件版本号提交到 `EspLink`。
-- 本地测试用 bin 可放在 `admin-frontend/dist/firmware/`，不要把测试产物误当源码提交。
+- 本地测试用 bin 由后台上传到 `uploads/firmware/`，该目录不应提交到 git。
 - 生产环境应使用 HTTPS/WSS，并关闭 `CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP`。
 - 当前固件只记录后端下发的 sha256，尚未做下载后严格 sha256 比对；生产前应补齐固件端完整性校验策略。

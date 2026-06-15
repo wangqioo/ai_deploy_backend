@@ -1,10 +1,18 @@
 const express = require('express');
 const request = require('supertest');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+const uploadDir = path.join(__dirname, '../../tmp/test-firmware-uploads');
 
 jest.mock('../middleware/adminAuth', () => (req, _res, next) => {
   req.admin = { username: 'admin', type: 'admin', role: 'admin' };
   next();
 });
+
+process.env.FIRMWARE_UPLOAD_DIR = uploadDir;
+process.env.FIRMWARE_PUBLIC_BASE_URL = 'http://backend.test/firmware';
 
 jest.mock('../services/firmwareReleaseService', () => ({
   createRelease: jest.fn(),
@@ -32,6 +40,14 @@ describe('firmware admin routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.FIRMWARE_UPLOAD_DIR = uploadDir;
+    process.env.FIRMWARE_PUBLIC_BASE_URL = 'http://backend.test/firmware';
+    delete process.env.WS_BASE_URL;
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  });
+
+  afterAll(() => {
+    fs.rmSync(uploadDir, { recursive: true, force: true });
   });
 
   test('lists firmware releases', async () => {
@@ -128,5 +144,60 @@ describe('firmware admin routes', () => {
     expect(res.status).toBe(400);
     expect(res.body.message).toBe('invalid release id');
     expect(firmwareReleaseService.setReleaseActive).not.toHaveBeenCalled();
+  });
+
+  test('uploads firmware binaries and returns artifact metadata', async () => {
+    const payload = Buffer.from('firmware-binary');
+
+    const res = await request(app)
+      .post('/api/v1/firmware/artifacts')
+      .set('Content-Type', 'application/octet-stream')
+      .set('X-Firmware-Filename', 'esplink-v1-1.0.2.bin')
+      .send(payload);
+
+    expect(res.status).toBe(201);
+    expect(res.body.data).toEqual({
+      filename: 'esplink-v1-1.0.2.bin',
+      artifact_url: 'http://backend.test/firmware/esplink-v1-1.0.2.bin',
+      sha256: crypto.createHash('sha256').update(payload).digest('hex'),
+      size_bytes: payload.length,
+    });
+    expect(fs.readFileSync(path.join(uploadDir, 'esplink-v1-1.0.2.bin'))).toEqual(payload);
+  });
+
+  test('derives firmware artifact public URL from WS_BASE_URL when explicit base URL is absent', async () => {
+    delete process.env.FIRMWARE_PUBLIC_BASE_URL;
+    process.env.WS_BASE_URL = 'ws://192.168.1.26:8088';
+
+    const res = await request(app)
+      .post('/api/v1/firmware/artifacts')
+      .set('Content-Type', 'application/octet-stream')
+      .set('X-Firmware-Filename', 'esplink-v1-1.0.3.bin')
+      .send(Buffer.from('firmware-binary'));
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.artifact_url).toBe('http://192.168.1.26:8088/firmware/esplink-v1-1.0.3.bin');
+  });
+
+  test('rejects firmware artifacts without a bin filename', async () => {
+    const res = await request(app)
+      .post('/api/v1/firmware/artifacts')
+      .set('Content-Type', 'application/octet-stream')
+      .set('X-Firmware-Filename', 'notes.txt')
+      .send(Buffer.from('not firmware'));
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('firmware filename must end with .bin');
+  });
+
+  test('rejects empty firmware artifact uploads', async () => {
+    const res = await request(app)
+      .post('/api/v1/firmware/artifacts')
+      .set('Content-Type', 'application/octet-stream')
+      .set('X-Firmware-Filename', 'empty.bin')
+      .send(Buffer.alloc(0));
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('firmware artifact is empty');
   });
 });

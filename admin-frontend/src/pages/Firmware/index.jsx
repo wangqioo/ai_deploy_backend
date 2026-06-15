@@ -1,10 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Button, Form, Input, InputNumber, Modal, Row, Col, Select, Space, Switch, Tag, Typography, message, Tooltip } from 'antd';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { createFirmwareRelease, getFirmwareReleases, setFirmwareReleaseActive } from '../../api';
+import { Table, Button, Form, Input, InputNumber, Modal, Row, Col, Select, Space, Switch, Tag, Typography, message, Tooltip, Upload } from 'antd';
+import { PlusOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { createFirmwareRelease, getFirmwareReleases, setFirmwareReleaseActive, uploadFirmwareArtifact } from '../../api';
 import dayjs from 'dayjs';
 
 const DEFAULT_CHANNEL = 'stable';
+
+function inferReleaseFields(filename) {
+  const match = filename.match(/^(.+)-(\d+\.\d+\.\d+)\.bin$/i);
+  if (!match) return {};
+  return {
+    board_type: match[1],
+    version: match[2],
+  };
+}
 
 function renderVersion(record) {
   return (
@@ -41,6 +50,7 @@ export default function Firmware() {
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingArtifact, setUploadingArtifact] = useState(false);
   const [form] = Form.useForm();
 
   const load = useCallback(async () => {
@@ -58,6 +68,7 @@ export default function Firmware() {
 
   function openCreate() {
     form.resetFields();
+    setUploadingArtifact(false);
     form.setFieldsValue({
       channel: DEFAULT_CHANNEL,
       is_active: true,
@@ -84,6 +95,35 @@ export default function Firmware() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function onArtifactSelected(file) {
+    if (!file.name.toLowerCase().endsWith('.bin')) {
+      message.error('请选择 .bin 固件文件');
+      return Upload.LIST_IGNORE;
+    }
+
+    setUploadingArtifact(true);
+    try {
+      const res = await uploadFirmwareArtifact(file);
+      const artifact = res.data;
+      const inferred = inferReleaseFields(artifact.filename);
+      const current = form.getFieldsValue(['board_type', 'version']);
+      form.setFieldsValue({
+        ...(!current.board_type && inferred.board_type ? { board_type: inferred.board_type } : {}),
+        ...(!current.version && inferred.version ? { version: inferred.version } : {}),
+        artifact_url: artifact.artifact_url,
+        sha256: artifact.sha256,
+        size_bytes: artifact.size_bytes,
+      });
+      message.success('固件已上传，地址、SHA256 和大小已自动填入');
+    } catch (err) {
+      message.error(err?.message || '固件上传失败');
+    } finally {
+      setUploadingArtifact(false);
+    }
+
+    return false;
   }
 
   async function onToggle(record, checked) {
@@ -182,13 +222,25 @@ export default function Firmware() {
         title="新建固件发布"
         open={modalOpen}
         onOk={onSubmit}
-        okButtonProps={{ loading: submitting }}
+        okButtonProps={{ loading: submitting, disabled: uploadingArtifact }}
         onCancel={() => setModalOpen(false)}
         width={680}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item label="固件文件">
+            <Upload
+              accept=".bin"
+              maxCount={1}
+              showUploadList={false}
+              beforeUpload={onArtifactSelected}
+            >
+              <Button icon={<UploadOutlined />} loading={uploadingArtifact}>
+                选择并上传 .bin
+              </Button>
+            </Upload>
+          </Form.Item>
           <Form.Item name="board_type" label="目标板型" rules={[{ required: true, message: '请输入板型' }]}>
-            <Input placeholder="例：esp32-s3-box" />
+            <Input placeholder="例：esplink-v1" />
           </Form.Item>
           <Row gutter={16}>
             <Col xs={24} md={15}>
@@ -203,10 +255,10 @@ export default function Firmware() {
             </Col>
           </Row>
           <Form.Item name="artifact_url" label="固件地址" rules={[{ required: true, message: '请输入固件地址' }]}>
-            <Input placeholder="https://example.com/firmware.bin" />
+            <Input placeholder="上传固件后自动填入，也可手动输入 URL" />
           </Form.Item>
           <Form.Item name="sha256" label="SHA256" rules={[{ required: true, message: '请输入 SHA256' }]}>
-            <Input placeholder="64 位十六进制校验值" />
+            <Input placeholder="上传固件后自动填入" />
           </Form.Item>
           <Row gutter={16}>
             <Col xs={24} md={12}>

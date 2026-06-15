@@ -6,10 +6,27 @@ const {
   listReleases,
   setReleaseActive,
 } = require('../services/firmwareReleaseService');
+const { saveFirmwareArtifact } = require('../services/firmwareArtifactService');
 
 const router = express.Router();
 
 router.use(adminAuth);
+
+router.post('/artifacts', express.raw({
+  type: ['application/octet-stream', 'application/x-binary', 'application/macbinary'],
+  limit: process.env.FIRMWARE_UPLOAD_MAX_BYTES || '8mb',
+}), async (req, res, next) => {
+  try {
+    const artifact = await saveFirmwareArtifact({
+      filename: req.headers['x-firmware-filename'],
+      buffer: req.body,
+    });
+    res.status(201).json(success(artifact));
+  } catch (err) {
+    if (err.code === 40000) return res.status(400).json(error(err.code, err.message));
+    next(err);
+  }
+});
 
 router.get('/releases', async (req, res, next) => {
   try {

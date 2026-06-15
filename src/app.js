@@ -9,6 +9,7 @@ const errorHandler = require('./middleware/errorHandler');
 const routes = require('./routes');
 const eslinkRoutes = require('./routes/esplink');
 const wsManager = require('./ws/deviceWsManager');
+const { getUploadDir } = require('./services/firmwareArtifactService');
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use(requestId);
 
 app.use('/api/v1', routes);
 app.use('/api', eslinkRoutes);   // EspLink 兼容路由（无 v1 前缀）
+app.use('/firmware', express.static(getUploadDir()));
 
 // Serve frontend static files (built by Vite)
 const frontendDist = path.join(__dirname, '../admin-frontend/dist');
