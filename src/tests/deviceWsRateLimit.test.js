@@ -1,5 +1,5 @@
-jest.mock('../services/rateLimiter', () => ({
-  consume: jest.fn(),
+jest.mock('../services/deviceAbuseProtection', () => ({
+  checkAiChatRate: jest.fn(),
 }));
 
 jest.mock('../config/database', () => ({
@@ -21,31 +21,29 @@ jest.mock('../services/llmService', () => ({
   streamChat: jest.fn(),
 }));
 
-const { consume } = require('../services/rateLimiter');
+const deviceAbuseProtection = require('../services/deviceAbuseProtection');
 
 describe('device WS AI rate limit helper', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test('returns false when shared rate limiter denies the device', async () => {
-    consume.mockResolvedValue(false);
+  test('passes bound state to abuse protection for AI chat', async () => {
+    deviceAbuseProtection.checkAiChatRate.mockResolvedValue(true);
     const { checkAiRateLimit } = require('../ws/deviceWsManager');
 
-    const allowed = await checkAiRateLimit('AA:BB:CC:DD:EE:FF');
+    await expect(checkAiRateLimit('AA:BB:CC:DD:EE:FF', true)).resolves.toBe(true);
 
-    expect(allowed).toBe(false);
-    expect(consume).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF', {
-      limit: 20,
-      windowSeconds: 60,
-      keyPrefix: 'ratelimit:device-ai',
+    expect(deviceAbuseProtection.checkAiChatRate).toHaveBeenCalledWith({
+      mac: 'AA:BB:CC:DD:EE:FF',
+      isBound: true,
     });
   });
 
-  test('returns true when shared rate limiter allows the device', async () => {
-    consume.mockResolvedValue(true);
+  test('returns false when abuse protection denies unbound device AI chat', async () => {
+    deviceAbuseProtection.checkAiChatRate.mockResolvedValue(false);
     const { checkAiRateLimit } = require('../ws/deviceWsManager');
 
-    await expect(checkAiRateLimit('AA:BB:CC:DD:EE:FF')).resolves.toBe(true);
+    await expect(checkAiRateLimit('AA:BB:CC:DD:EE:FF', false)).resolves.toBe(false);
   });
 });

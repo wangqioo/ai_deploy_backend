@@ -68,6 +68,12 @@ WX_APPID=                # 空 = dev 模式，code 直接当 openid
 WX_SECRET=
 WS_BASE_URL=ws://150.158.146.192:6050
 REQUIRE_DEVICE_PSK=false       # 验证阶段默认关闭；量产开启前需先写入 production_keys
+OTA_CHECK_RATE_LIMIT=10
+OTA_CHECK_RATE_WINDOW_SECONDS=60
+DEVICE_AI_RATE_LIMIT=20
+DEVICE_AI_RATE_WINDOW_SECONDS=60
+UNBOUND_DEVICE_AI_RATE_LIMIT=3
+UNBOUND_DEVICE_AI_RATE_WINDOW_SECONDS=300
 DEFAULT_AI_MODEL=deepseek-chat
 ```
 
@@ -294,8 +300,18 @@ REQUIRE_DEVICE_PSK=true
 |------|------|--------|
 | HTTPS/WSS | 防中间人窃取 token | 低（给域名配证书 + frp 配置） |
 | Token 轮换 | 每次 WebSocket 断开后 device_key 失效 | 中（需处理重连机制） |
-| 速率限制 | 防穷举注册 | 低（加 rate limiter） |
-| 未绑定设备限流 | 未绑定设备限制 ai_chat 次数 | 中 |
+| 速率限制 | 已对 `/api/ota/check` 按 IP+MAC 限制，默认 10 次/60秒 | 已实现 |
+| 未绑定设备限流 | 已对未绑定设备限制 ai_chat，默认 3 次/300秒 | 已实现 |
+
+#### 当前限流默认值
+
+| 场景 | Env | 默认 |
+|------|-----|------|
+| 上电注册 `/api/ota/check` | `OTA_CHECK_RATE_LIMIT` / `OTA_CHECK_RATE_WINDOW_SECONDS` | 10 次 / 60 秒 |
+| 已绑定设备 AI 对话 | `DEVICE_AI_RATE_LIMIT` / `DEVICE_AI_RATE_WINDOW_SECONDS` | 20 次 / 60 秒 |
+| 未绑定设备 AI 对话 | `UNBOUND_DEVICE_AI_RATE_LIMIT` / `UNBOUND_DEVICE_AI_RATE_WINDOW_SECONDS` | 3 次 / 300 秒 |
+
+Redis 异常时限流按当前实现 fail-open，不阻断硬件联调。
 
 ### 4.6 当前与量产鉴权对比
 
@@ -378,7 +394,7 @@ remotePort = 6050
 - [ ] 设计 PSK 烧录流程和密钥管理方案
 - [x] 添加 production_keys 表和注册鉴权中间件
 - [ ] Token 轮换机制
-- [ ] 速率限制和滥用防护
+- [x] 速率限制和滥用防护
 - [ ] 管理后台增加设备管理和日志查看功能
 
 ### 7.3 长期

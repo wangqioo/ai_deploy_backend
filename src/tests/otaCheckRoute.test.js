@@ -9,8 +9,13 @@ jest.mock('../services/deviceIdentityService', () => ({
   verifyBootRequest: jest.fn(),
 }));
 
+jest.mock('../services/deviceAbuseProtection', () => ({
+  checkOtaRegistrationRate: jest.fn(),
+}));
+
 const otaCheckService = require('../services/otaCheckService');
 const deviceIdentityService = require('../services/deviceIdentityService');
+const deviceAbuseProtection = require('../services/deviceAbuseProtection');
 const esplinkRoutes = require('../routes/esplink');
 
 function makeApp() {
@@ -32,6 +37,7 @@ describe('POST /api/ota/check', () => {
       allowed: true,
       mode: 'development',
     });
+    deviceAbuseProtection.checkOtaRegistrationRate.mockResolvedValue(true);
   });
 
   test('delegates boot report handling to otaCheckService', async () => {
@@ -58,6 +64,10 @@ describe('POST /api/ota/check', () => {
       board_type: 'esp32-s3-box',
       firmware_version: '2.4.1',
     });
+    expect(deviceAbuseProtection.checkOtaRegistrationRate).toHaveBeenCalledWith({
+      ip: expect.any(String),
+      mac: 'AA:BB:CC:DD:EE:FF',
+    });
     expect(otaCheckService.checkBootReport).toHaveBeenCalledWith({
       mac: 'AA:BB:CC:DD:EE:FF',
       board_type: 'esp32-s3-box',
@@ -79,6 +89,7 @@ describe('POST /api/ota/check', () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ detail: 'mac 不能为空' });
     expect(deviceIdentityService.verifyBootRequest).not.toHaveBeenCalled();
+    expect(deviceAbuseProtection.checkOtaRegistrationRate).not.toHaveBeenCalled();
     expect(otaCheckService.checkBootReport).not.toHaveBeenCalled();
   });
 
@@ -105,6 +116,26 @@ describe('POST /api/ota/check', () => {
       timestamp: 123,
       nonce: 'nonce-1',
       signature: 'bad',
+    });
+    expect(otaCheckService.checkBootReport).not.toHaveBeenCalled();
+  });
+
+  test('rate limits boot reports before calling otaCheckService', async () => {
+    deviceAbuseProtection.checkOtaRegistrationRate.mockResolvedValue(false);
+
+    const res = await request(app)
+      .post('/api/ota/check')
+      .send({
+        mac: 'AA:BB:CC:DD:EE:FF',
+        board_type: 'esp32-s3-box',
+        firmware_version: '2.4.1',
+      });
+
+    expect(res.status).toBe(429);
+    expect(res.body).toEqual({ code: 42900, message: '请求过于频繁，请稍后再试' });
+    expect(deviceAbuseProtection.checkOtaRegistrationRate).toHaveBeenCalledWith({
+      ip: expect.any(String),
+      mac: 'AA:BB:CC:DD:EE:FF',
     });
     expect(otaCheckService.checkBootReport).not.toHaveBeenCalled();
   });

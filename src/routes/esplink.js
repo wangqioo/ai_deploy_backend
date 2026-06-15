@@ -2,6 +2,7 @@ const router = require('express').Router();
 const wechatAuth = require('../middleware/wechatAuth');
 const svc = require('../services/wechatService');
 const deviceIdentityService = require('../services/deviceIdentityService');
+const deviceAbuseProtection = require('../services/deviceAbuseProtection');
 const otaCheckService = require('../services/otaCheckService');
 const prisma = require('../config/database');
 const policy = require('../services/deviceCommandPolicy');
@@ -30,6 +31,14 @@ router.post('/ota/check', async (req, res, next) => {
     const identity = await deviceIdentityService.verifyBootRequest(req.body);
     if (!identity.allowed) {
       return res.status(identity.statusCode || 403).json({ detail: identity.reason });
+    }
+
+    const registrationAllowed = await deviceAbuseProtection.checkOtaRegistrationRate({
+      ip: req.ip,
+      mac,
+    });
+    if (!registrationAllowed) {
+      return res.status(429).json({ code: 42900, message: '请求过于频繁，请稍后再试' });
     }
 
     const result = await otaCheckService.checkBootReport({ mac, board_type, firmware_version });

@@ -184,6 +184,8 @@ Write-Host "device_key: $deviceKey"
 
 若 `.env` 设置了 `REQUIRE_DEVICE_PSK=true`，需先应用 `db/migrations/2026-06-15-create-production-keys.sql` 并写入对应 MAC 的 `production_keys` 记录；模拟请求还必须携带 `sn`、`timestamp`、`nonce`、`signature`。
 
+连续重复调用 `/api/ota/check` 可能返回 `429 请求过于频繁`；默认按 `IP+MAC` 限制为 10 次/60秒，可通过 `OTA_CHECK_RATE_LIMIT` 和 `OTA_CHECK_RATE_WINDOW_SECONDS` 调整。
+
 ### 第二阶段：WebSocket 测试
 
 项目根目录提供了 `test_ws.js`，支持三种测试模式：
@@ -353,6 +355,7 @@ Redis 断线时限流和 Key 缓存会自动降级（放行请求），不影响
 **Q: 固件调用 `/api/ota/check` 失败**
 固件的 `BOOT_REGISTER_URL`（`main.c` 第27行）需改为后端实际地址。开发环境无法用 `localhost`，需用电脑局域网 IP（如 `http://192.168.x.x:8088/api/ota/check`），生产用域名。
 如果后端开启了 `REQUIRE_DEVICE_PSK=true`，还要确认已执行 `db/migrations/2026-06-15-create-production-keys.sql`，并且该设备在 `production_keys` 中有可用密钥；固件请求需带 `sn`、`timestamp`、`nonce` 和 HMAC `signature`。
+如果返回 `429`，说明触发了上电注册限流，检查 `OTA_CHECK_RATE_LIMIT` 和 `OTA_CHECK_RATE_WINDOW_SECONDS`。
 
 **Q: WebSocket 设备无法连接**
 1. 检查 `.env` 中 `WS_BASE_URL` 是否与固件能访问的地址一致

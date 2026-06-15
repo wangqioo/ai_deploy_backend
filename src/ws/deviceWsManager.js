@@ -4,13 +4,11 @@ const llmService = require('../services/llmService');
 const devicePresence = require('../services/devicePresence');
 const devicePresenceProjection = require('../services/devicePresenceProjection');
 const deviceCommandBroker = require('../services/deviceCommandBroker');
-const { consume } = require('../services/rateLimiter');
+const deviceAbuseProtection = require('../services/deviceAbuseProtection');
 const { normalizeVersion } = require('../services/firmwareVersionPolicy');
 
 // mac_address → WebSocket 实例
 const connections = new Map();
-const AI_RATE_LIMIT = 20;
-const AI_RATE_WINDOW_SECONDS = 60;
 const INSTANCE_ID = process.env.INSTANCE_ID || `${process.pid}`;
 let connectionSeq = 0;
 
@@ -19,12 +17,8 @@ function nextOwnerId() {
   return `${INSTANCE_ID}:${Date.now()}:${connectionSeq}`;
 }
 
-async function checkAiRateLimit(mac) {
-  return consume(mac, {
-    limit: AI_RATE_LIMIT,
-    windowSeconds: AI_RATE_WINDOW_SECONDS,
-    keyPrefix: 'ratelimit:device-ai',
-  });
+async function checkAiRateLimit(mac, isBound) {
+  return deviceAbuseProtection.checkAiChatRate({ mac, isBound });
 }
 
 function setup(httpServer) {
@@ -112,7 +106,7 @@ function setup(httpServer) {
           ws.send(JSON.stringify({ type: 'ai_error', session_id, error: 'messages 不能为空' }));
           return;
         }
-        const allowed = await checkAiRateLimit(mac);
+        const allowed = await checkAiRateLimit(mac, device.wechat_user_id != null);
         if (!allowed) {
           ws.send(JSON.stringify({ type: 'ai_error', session_id, error: '请求过于频繁，请稍后再试' }));
           return;
