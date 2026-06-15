@@ -18,7 +18,7 @@ jest.mock('../services/deviceCommandPolicy', () => ({
 
 jest.mock('../services/deviceCommandRouter', () => ({
   send: jest.fn(),
-}), { virtual: true });
+}));
 
 const prisma = require('../config/database');
 const policy = require('../services/deviceCommandPolicy');
