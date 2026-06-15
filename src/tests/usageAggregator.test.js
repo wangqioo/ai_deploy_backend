@@ -14,7 +14,13 @@ jest.mock('../config/database', () => ({
   },
 }));
 
+jest.mock('../services/jobCoordinator', () => ({
+  runWithLease: jest.fn(),
+}));
+
 const prisma = require('../config/database');
+const cron = require('node-cron');
+const { runWithLease } = require('../services/jobCoordinator');
 const { aggregateHour } = require('../jobs/usageAggregator');
 
 describe('aggregateHour', () => {
@@ -59,5 +65,46 @@ describe('aggregateHour', () => {
     });
     expect(prisma.usageHourly.upsert).toHaveBeenCalledTimes(1);
     expect(prisma.usageHourly.upsert.mock.calls[0][0].create.api_key_id).toBe('sk-real');
+  });
+});
+
+describe('usageAggregator cron handler', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-06-14T09:05:00.000Z'));
+    runWithLease.mockImplementation(async (_jobName, _ttlMs, fn) => ({
+      acquired: true,
+      result: await fn(),
+    }));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('runs the previous-hour aggregate through the job coordinator lease', async () => {
+    const { start } = require('../jobs/usageAggregator');
+    prisma.usageLog.groupBy.mockResolvedValue([]);
+
+    start();
+    await cron.schedule.mock.calls[0][1]();
+
+    expect(cron.schedule).toHaveBeenCalledWith('5 * * * *', expect.any(Function));
+    expect(runWithLease).toHaveBeenCalledWith(
+      'usageAggregator',
+      10 * 60 * 1000,
+      expect.any(Function)
+    );
+    expect(prisma.usageLog.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          timestamp: {
+            gte: new Date('2026-06-14T08:00:00.000Z'),
+            lt: new Date('2026-06-14T09:00:00.000Z'),
+          },
+        }),
+      })
+    );
   });
 });

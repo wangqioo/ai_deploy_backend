@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const prisma = require('../config/database');
+const { runWithLease } = require('../services/jobCoordinator');
 
 async function aggregateHour(hourStart) {
   const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
@@ -74,7 +75,7 @@ function start() {
     try {
       const now = new Date();
       const lastHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() - 1);
-      await aggregateHour(lastHour);
+      await runWithLease('usageAggregator', 10 * 60 * 1000, () => aggregateHour(lastHour));
     } catch (err) {
       console.error('[UsageAggregator] 错误:', err.message);
     }

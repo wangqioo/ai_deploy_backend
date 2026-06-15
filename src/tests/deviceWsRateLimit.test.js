@@ -1,5 +1,5 @@
-jest.mock('../config/redis', () => ({
-  eval: jest.fn(),
+jest.mock('../services/rateLimiter', () => ({
+  consume: jest.fn(),
 }));
 
 jest.mock('../config/database', () => ({
@@ -21,31 +21,29 @@ jest.mock('../services/llmService', () => ({
   streamChat: jest.fn(),
 }));
 
-const redis = require('../config/redis');
+const { consume } = require('../services/rateLimiter');
 
 describe('device WS AI rate limit helper', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test('returns false when Redis token bucket denies the device', async () => {
-    redis.eval.mockResolvedValue(0);
+  test('returns false when shared rate limiter denies the device', async () => {
+    consume.mockResolvedValue(false);
     const { checkAiRateLimit } = require('../ws/deviceWsManager');
 
     const allowed = await checkAiRateLimit('AA:BB:CC:DD:EE:FF');
 
     expect(allowed).toBe(false);
-    expect(redis.eval).toHaveBeenCalledWith(
-      expect.any(String),
-      1,
-      'ratelimit:device-ai:AA:BB:CC:DD:EE:FF',
-      20,
-      60
-    );
+    expect(consume).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF', {
+      limit: 20,
+      windowSeconds: 60,
+      keyPrefix: 'ratelimit:device-ai',
+    });
   });
 
-  test('fails open when Redis is unavailable', async () => {
-    redis.eval.mockRejectedValue(new Error('redis down'));
+  test('returns true when shared rate limiter allows the device', async () => {
+    consume.mockResolvedValue(true);
     const { checkAiRateLimit } = require('../ws/deviceWsManager');
 
     await expect(checkAiRateLimit('AA:BB:CC:DD:EE:FF')).resolves.toBe(true);
