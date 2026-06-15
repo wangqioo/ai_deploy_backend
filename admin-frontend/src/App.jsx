@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Tenants from './pages/Tenants';
 import ApiKeys from './pages/ApiKeys';
 import Devices from './pages/Devices';
+import Firmware from './pages/Firmware';
 import Usage from './pages/Usage';
 import LlmConfig from './pages/LlmConfig';
 
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="tenants" element={<Tenants />} />
           <Route path="keys" element={<ApiKeys />} />
           <Route path="devices" element={<Devices />} />
+          <Route path="firmware" element={<Firmware />} />
           <Route path="usage" element={<Usage />} />
           <Route path="llm-config" element={<LlmConfig />} />
         </Route>

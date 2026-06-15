@@ -46,6 +46,11 @@ export const kickDevice = (mac) => api.post(`/devices/${encodeURIComponent(mac)}
 export const unbindDevice = (mac) => api.post(`/devices/${encodeURIComponent(mac)}/unbind`);
 export const assignDeviceKey = (mac, api_key_id) => api.post(`/devices/${encodeURIComponent(mac)}/assign-key`, { api_key_id });
 
+// Firmware releases
+export const getFirmwareReleases = (params) => api.get('/firmware/releases', { params });
+export const createFirmwareRelease = (data) => api.post('/firmware/releases', data);
+export const setFirmwareReleaseActive = (id, is_active) => api.patch(`/firmware/releases/${id}/active`, { is_active });
+
 // Usage
 export const getUsageSummary = (params) => api.get('/usage/summary', { params });
 export const getDailyStats = (params) => api.get('/usage/daily', { params });
