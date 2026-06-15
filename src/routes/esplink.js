@@ -1,7 +1,9 @@
 const router = require('express').Router();
 const wechatAuth = require('../middleware/wechatAuth');
 const svc = require('../services/wechatService');
-const wsManager = require('../ws/deviceWsManager');
+const prisma = require('../config/database');
+const policy = require('../services/deviceCommandPolicy');
+const commandRouter = require('../services/deviceCommandRouter');
 
 // ── 微信登录 ──────────────────────────────────────────────
 // POST /api/auth/wechat  { code }
@@ -83,9 +85,23 @@ router.post('/device/:mac/command', wechatAuth, async (req, res, next) => {
   try {
     const mac = req.params.mac.replace(/-/g, ':');
     const { payload } = req.body;
-    const sent = wsManager.sendCommand(mac, payload);
-    if (!sent) return res.status(503).json({ detail: '设备当前不在线' });
-    res.json({ ok: true });
+    const device = await prisma.device.findUnique({ where: { mac_address: mac } });
+    const decision = policy.canSendCommand({
+      actor: { type: 'wechat', userId: req.wechatUser.userId },
+      device,
+      payload,
+    });
+
+    if (!decision.allowed) {
+      return res.status(decision.statusCode).json({ detail: decision.reason });
+    }
+
+    const result = await commandRouter.send(mac, payload);
+    if (result.status === 'offline') return res.status(503).json({ detail: '设备当前不在线' });
+    if (result.status !== 'delivered') {
+      return res.status(502).json({ detail: result.reason || 'command_delivery_failed' });
+    }
+    res.json({ ok: true, status: 'delivered' });
   } catch (err) {
     next(err);
   }
