@@ -34,6 +34,10 @@ jest.mock('../services/devicePresenceProjection', () => ({
   disconnect: jest.fn(() => Promise.resolve()),
 }));
 
+jest.mock('../services/deviceCommandBroker', () => ({
+  subscribe: jest.fn(),
+}));
+
 jest.mock('../services/llmService', () => ({
   getModelForDevice: jest.fn(),
   streamChat: jest.fn(),
@@ -42,6 +46,7 @@ jest.mock('../services/llmService', () => ({
 const prisma = require('../config/database');
 const devicePresence = require('../services/devicePresence');
 const devicePresenceProjection = require('../services/devicePresenceProjection');
+const deviceCommandBroker = require('../services/deviceCommandBroker');
 
 function createFakeSocket() {
   const handlers = {};
@@ -76,6 +81,7 @@ describe('device WS presence integration', () => {
       mac_address: 'AA:BB:CC:DD:EE:FF',
       device_key: 'device-token',
     });
+    deviceCommandBroker.subscribe.mockReturnValue({ channel: 'device:commands:test' });
   });
 
   test('does not mark device offline when a replaced socket closes after a newer connection exists', async () => {
@@ -125,5 +131,25 @@ describe('device WS presence integration', () => {
       'AA:BB:CC:DD:EE:FF',
       { ownerId: registerOwnerId }
     );
+  });
+
+  test('subscribes to instance command channel and forwards broker messages to local socket', async () => {
+    const { setup } = require('../ws/deviceWsManager');
+    const wss = setup({});
+    const req = { headers: { authorization: 'Bearer device-token' } };
+    const socket = createFakeSocket();
+
+    await wss.handlers.connection(socket, req);
+    const handler = deviceCommandBroker.subscribe.mock.calls[0][1];
+    handler({
+      mac: 'AA:BB:CC:DD:EE:FF',
+      payload: { command: 'reboot' },
+    });
+
+    expect(deviceCommandBroker.subscribe).toHaveBeenCalledWith(expect.any(String), expect.any(Function));
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({
+      type: 'command',
+      payload: { command: 'reboot' },
+    }));
   });
 });

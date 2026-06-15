@@ -98,6 +98,9 @@ router.post('/device/:mac/command', wechatAuth, async (req, res, next) => {
 
     const result = await commandRouter.send(mac, payload);
     if (result.status === 'offline') return res.status(503).json({ detail: '设备当前不在线' });
+    if (result.status === 'published') {
+      return res.json({ ok: true, status: 'published' });
+    }
     if (result.status !== 'delivered') {
       return res.status(502).json({ detail: result.reason || 'command_delivery_failed' });
     }

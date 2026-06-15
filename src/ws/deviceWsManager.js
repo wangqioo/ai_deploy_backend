@@ -3,6 +3,7 @@ const prisma = require('../config/database');
 const llmService = require('../services/llmService');
 const devicePresence = require('../services/devicePresence');
 const devicePresenceProjection = require('../services/devicePresenceProjection');
+const deviceCommandBroker = require('../services/deviceCommandBroker');
 const { consume } = require('../services/rateLimiter');
 
 // mac_address → WebSocket 实例
@@ -27,6 +28,10 @@ async function checkAiRateLimit(mac) {
 
 function setup(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws/device' });
+
+  deviceCommandBroker.subscribe(INSTANCE_ID, ({ mac, payload }) => {
+    sendCommand(mac, payload);
+  });
 
   wss.on('connection', async (ws, req) => {
     // 在 async 认证完成前先缓冲所有消息，防止竞态丢消息

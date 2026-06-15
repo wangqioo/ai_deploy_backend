@@ -95,6 +95,17 @@ describe('POST /api/device/:mac/command', () => {
     expect(res.body).toEqual({ detail: '设备当前不在线' });
   });
 
+  test('returns accepted when the command router publishes to a remote instance', async () => {
+    commandRouter.send.mockResolvedValue({ status: 'published', instanceId: 'instance-b' });
+
+    const res = await request(app)
+      .post('/api/device/AA-BB-CC-DD-EE-FF/command')
+      .send({ payload });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, status: 'published' });
+  });
+
   test('returns 502 when the command router reports a delivery failure', async () => {
     commandRouter.send.mockResolvedValue({ status: 'failed', reason: 'transport_error' });
 
